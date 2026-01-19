@@ -37,7 +37,7 @@ AMBIANCES_VALIDES = ["Romantique", "Épuré", "Festif", "Corporate", "Champêtre
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
     """Analyse une image de bouquet avec Claude Vision"""
     
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, proxies=None)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     
     prompt = f"""Analyse cette photo de bouquet de fleurs en soie pour Maison Amarante (service de location de compositions florales).
 
