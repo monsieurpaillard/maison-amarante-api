@@ -94,6 +94,59 @@ def analyze():
     result = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
     return jsonify(result)
 
+def get_next_bouquet_id():
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
+    response = req.get(url, headers=headers, params={"pageSize": 100})
+    count = len(response.json().get("records", [])) if response.status_code == 200 else 0
+    return f"MA-{datetime.now().year}-{count + 1:05d}"
+
+
+def create_bouquet_in_airtable(data: dict) -> dict:
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", "Content-Type": "application/json"}
+    
+    bouquet_id = get_next_bouquet_id()
+    fields = {
+        "Bouquet_ID": bouquet_id,
+        "Nom": data.get("nom", f"Bouquet {data.get('style', '')}"),
+        "Taille": data.get("taille", data.get("taille_suggeree", "Moyen")),
+        "Couleurs": data.get("couleurs", []),
+        "Style": data.get("style", "Classique"),
+        "Statut": "Disponible",
+        "Condition": 5,
+        "Rotations": 0,
+        "Date_Création": datetime.now().strftime("%Y-%m-%d"),
+        "Saison": data.get("saison", "Toutes saisons"),
+        "Personas_Suggérées": data.get("personas", []),
+        "Ambiance": data.get("ambiance", []),
+        "Notes": data.get("description", "")
+    }
+    
+    response = req.post(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        record = response.json()
+        return {"success": True, "bouquet_id": bouquet_id, "record_id": record["id"]}
+    return {"success": False, "error": response.text}
+
+
+@app.route("/analyze-and-create", methods=["POST"])
+def analyze_and_create():
+    data = request.json
+    if not data or "image_base64" not in data:
+        return jsonify({"error": "image_base64 required"}), 400
+    
+    analysis = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
+    if "error" in analysis:
+        return jsonify(analysis), 500
+    
+    if data.get("nom"):
+        analysis["nom"] = data["nom"]
+    if data.get("taille"):
+        analysis["taille"] = data["taille"]
+    
+    result = create_bouquet_in_airtable(analysis)
+    return jsonify({"analysis": analysis, "created": result})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
