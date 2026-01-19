@@ -1,5 +1,5 @@
+anthropic==0.18.1
 flask==3.0.0
 flask-cors==4.0.0
-anthropic==0.39.0
 requests==2.31.0
 gunicorn==21.2.0
