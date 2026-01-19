@@ -15,6 +15,9 @@ import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime
+# Remove proxy env vars that Railway injects
+for var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
+    os.environ.pop(var, None)
 
 app = Flask(__name__)
 CORS(app)
