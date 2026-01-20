@@ -1,15 +1,15 @@
 """
-Maison Amarante - API Analyse Bouquets
+Maison Amarante - API Analyse Bouquets + PWA
 """
 
 import os
 import json
 import requests as req
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 CORS(app)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
@@ -88,7 +88,30 @@ Liste TOUTES les fleurs et feuillages que tu identifies dans le bouquet."""
         return {"error": "JSON parse failed", "raw": text}
 
 
-@app.route("/", methods=["GET"])
+# PWA Routes
+@app.route("/")
+def index():
+    return send_from_directory('static', 'index.html')
+
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory('static', 'manifest.json')
+
+@app.route("/sw.js")
+def service_worker():
+    return send_from_directory('static', 'sw.js')
+
+@app.route("/icon-192.png")
+def icon_192():
+    return send_from_directory('static', 'icon-192.png')
+
+@app.route("/icon-512.png")
+def icon_512():
+    return send_from_directory('static', 'icon-512.png')
+
+
+# API Routes
+@app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "Maison Amarante Bouquet Analyzer"})
 
