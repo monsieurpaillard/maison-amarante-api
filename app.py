@@ -23,6 +23,8 @@ TAILLES_VALIDES = ["Petit", "Moyen", "Grand", "Masterpiece"]
 SAISONS_VALIDES = ["Printemps", "Été", "Automne", "Hiver", "Toutes saisons"]
 PERSONAS_VALIDES = ["Coiffeur", "Bureau", "Hôtel", "Restaurant", "Retail"]
 AMBIANCES_VALIDES = ["Romantique", "Épuré", "Festif", "Corporate", "Champêtre", "Luxe"]
+FLEURS_VALIDES = ["Rose", "Pivoine", "Hortensia", "Orchidée", "Lys", "Tulipe", "Renoncule", "Dahlia", "Gypsophile", "Lavande", "Anthurium", "Amarante", "Camélia", "Œillet", "Marguerite", "Anémone", "Freesia", "Gerbera", "Iris", "Jasmin", "Jonquille", "Lilas", "Magnolia", "Muguet", "Narcisse", "Pavot", "Protea", "Tournesol", "Zinnia", "Alstroemeria", "Chrysanthème", "Cosmos", "Delphinium", "Gardénia", "Hibiscus", "Jacinthe", "Liseron", "Lotus", "Lisianthus", "Wax flower", "Chardon", "Craspedia", "Statice", "Astilbe", "Agapanthe"]
+FEUILLAGES_VALIDES = ["Eucalyptus", "Fougère", "Lierre", "Olivier", "Monstera", "Palmier", "Ruscus", "Asparagus", "Pittosporum", "Saule", "Buis", "Romarin", "Laurier", "Bambou", "Graminées", "Ficus", "Philodendron", "Hosta", "Alocasia", "Calathea", "Cyprès", "Thuya", "Mimosa", "Genêt", "Bruyère", "Salal", "Galax", "Leucadendron", "Viburnum", "Skimmia"]
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
@@ -30,7 +32,7 @@ def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg")
 
 Réponds UNIQUEMENT en JSON valide:
 
-{{"couleurs": ["couleur1"], "style": "style", "taille_suggeree": "taille", "saison": "saison", "personas": ["persona1"], "ambiance": ["ambiance1"], "description": "courte description"}}
+{{"couleurs": ["couleur1"], "style": "style", "taille_suggeree": "taille", "saison": "saison", "personas": ["persona1"], "ambiance": ["ambiance1"], "fleurs": ["fleur1", "fleur2"], "feuillages": ["feuillage1"], "description": "courte description"}}
 
 Couleurs possibles: {COULEURS_VALIDES}
 Styles: {STYLES_VALIDES}
@@ -38,8 +40,11 @@ Tailles: {TAILLES_VALIDES}
 Saisons: {SAISONS_VALIDES}
 Personas: {PERSONAS_VALIDES}
 Ambiances: {AMBIANCES_VALIDES}
+Fleurs possibles: {FLEURS_VALIDES}
+Feuillages possibles: {FEUILLAGES_VALIDES}
 
-Choisis 1-4 couleurs, 1 style, 1 taille, 1 saison, 1-3 personas, 1-2 ambiances."""
+Choisis 1-4 couleurs, 1 style, 1 taille, 1 saison, 1-3 personas, 1-2 ambiances.
+Liste TOUTES les fleurs et feuillages que tu identifies dans le bouquet."""
 
     response = req.post(
         "https://api.anthropic.com/v1/messages",
@@ -76,6 +81,8 @@ Choisis 1-4 couleurs, 1 style, 1 taille, 1 saison, 1-3 personas, 1-2 ambiances."
         result["saison"] = result.get("saison") if result.get("saison") in SAISONS_VALIDES else "Toutes saisons"
         result["personas"] = [p for p in result.get("personas", []) if p in PERSONAS_VALIDES][:3]
         result["ambiance"] = [a for a in result.get("ambiance", []) if a in AMBIANCES_VALIDES][:2]
+        result["fleurs"] = [f for f in result.get("fleurs", []) if f in FLEURS_VALIDES]
+        result["feuillages"] = [f for f in result.get("feuillages", []) if f in FEUILLAGES_VALIDES]
         return result
     except:
         return {"error": "JSON parse failed", "raw": text}
@@ -93,6 +100,7 @@ def analyze():
         return jsonify({"error": "image_base64 required"}), 400
     result = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
     return jsonify(result)
+
 
 def get_next_bouquet_id():
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
@@ -120,6 +128,8 @@ def create_bouquet_in_airtable(data: dict) -> dict:
         "Saison": data.get("saison", "Toutes saisons"),
         "Personas_Suggérées": data.get("personas", []),
         "Ambiance": data.get("ambiance", []),
+        "Fleurs": data.get("fleurs", []),
+        "Feuillages": data.get("feuillages", []),
         "Notes": data.get("description", "")
     }
     
@@ -147,6 +157,7 @@ def analyze_and_create():
     
     result = create_bouquet_in_airtable(analysis)
     return jsonify({"analysis": analysis, "created": result})
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
