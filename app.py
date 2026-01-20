@@ -16,6 +16,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
 AIRTABLE_BOUQUETS_TABLE = os.environ.get("AIRTABLE_BOUQUETS_TABLE", "tblIO7x8iR01vO5Bx")
+IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
 
 COULEURS_VALIDES = ["Rouge", "Blanc", "Rose", "Vert", "Jaune", "Orange", "Violet", "Bleu", "Noir"]
 STYLES_VALIDES = ["Bucolique", "Zen", "Moderne", "Coloré", "Classique"]
@@ -25,6 +26,30 @@ PERSONAS_VALIDES = ["Coiffeur", "Bureau", "Hôtel", "Restaurant", "Retail"]
 AMBIANCES_VALIDES = ["Romantique", "Épuré", "Festif", "Corporate", "Champêtre", "Luxe"]
 FLEURS_VALIDES = ["Rose", "Pivoine", "Hortensia", "Orchidée", "Lys", "Tulipe", "Renoncule", "Dahlia", "Gypsophile", "Lavande", "Anthurium", "Amarante", "Camélia", "Œillet", "Marguerite", "Anémone", "Freesia", "Gerbera", "Iris", "Jasmin", "Jonquille", "Lilas", "Magnolia", "Muguet", "Narcisse", "Pavot", "Protea", "Tournesol", "Zinnia", "Alstroemeria", "Chrysanthème", "Cosmos", "Delphinium", "Gardénia", "Hibiscus", "Jacinthe", "Liseron", "Lotus", "Lisianthus", "Wax flower", "Chardon", "Craspedia", "Statice", "Astilbe", "Agapanthe"]
 FEUILLAGES_VALIDES = ["Eucalyptus", "Fougère", "Lierre", "Olivier", "Monstera", "Palmier", "Ruscus", "Asparagus", "Pittosporum", "Saule", "Buis", "Romarin", "Laurier", "Bambou", "Graminées", "Ficus", "Philodendron", "Hosta", "Alocasia", "Calathea", "Cyprès", "Thuya", "Mimosa", "Genêt", "Bruyère", "Salal", "Galax", "Leucadendron", "Viburnum", "Skimmia"]
+
+
+def upload_to_imgbb(image_base64: str) -> dict:
+    """Upload image to imgbb and return URL"""
+    if not IMGBB_API_KEY:
+        return {"error": "IMGBB_API_KEY not configured"}
+    
+    response = req.post(
+        "https://api.imgbb.com/1/upload",
+        data={
+            "key": IMGBB_API_KEY,
+            "image": image_base64
+        }
+    )
+    
+    if response.status_code == 200:
+        data = response.json()
+        if data.get("success"):
+            return {
+                "url": data["data"]["url"],
+                "delete_url": data["data"]["delete_url"],
+                "thumb_url": data["data"]["thumb"]["url"]
+            }
+    return {"error": response.text}
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
@@ -133,7 +158,7 @@ def get_next_bouquet_id():
     return f"MA-{datetime.now().year}-{count + 1:05d}"
 
 
-def create_bouquet_in_airtable(data: dict) -> dict:
+def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", "Content-Type": "application/json"}
     
@@ -156,10 +181,26 @@ def create_bouquet_in_airtable(data: dict) -> dict:
         "Notes": data.get("description", "")
     }
     
+    # Add photo if we have an image URL
+    if image_url:
+        fields["Photo"] = [{"url": image_url}]
+    
     response = req.post(url, headers=headers, json={"fields": fields})
     if response.status_code == 200:
         record = response.json()
-        return {"success": True, "bouquet_id": bouquet_id, "record_id": record["id"]}
+        record_id = record["id"]
+        
+        # Generate QR code URL pointing to Airtable record
+        qr_url = f"https://airtable.com/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}/{record_id}"
+        
+        # Update record with QR code URL
+        req.patch(
+            f"{url}/{record_id}",
+            headers=headers,
+            json={"fields": {"QR_Code_URL": qr_url}}
+        )
+        
+        return {"success": True, "bouquet_id": bouquet_id, "record_id": record_id, "qr_url": qr_url}
     return {"success": False, "error": response.text}
 
 
@@ -169,6 +210,11 @@ def analyze_and_create():
     if not data or "image_base64" not in data:
         return jsonify({"error": "image_base64 required"}), 400
     
+    # 1. Upload image to imgbb
+    image_upload = upload_to_imgbb(data["image_base64"])
+    image_url = image_upload.get("url")
+    
+    # 2. Analyze with Claude
     analysis = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
     if "error" in analysis:
         return jsonify(analysis), 500
@@ -178,8 +224,14 @@ def analyze_and_create():
     if data.get("taille"):
         analysis["taille"] = data["taille"]
     
-    result = create_bouquet_in_airtable(analysis)
-    return jsonify({"analysis": analysis, "created": result})
+    # 3. Create in Airtable with image URL
+    result = create_bouquet_in_airtable(analysis, image_url)
+    
+    return jsonify({
+        "analysis": analysis, 
+        "created": result,
+        "image_url": image_url
+    })
 
 
 if __name__ == "__main__":
