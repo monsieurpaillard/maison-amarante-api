@@ -35,25 +35,47 @@ FEUILLAGES_VALIDES = ["Eucalyptus", "Fougère", "Lierre", "Olivier", "Monstera",
 def upload_to_imgbb(image_base64: str) -> dict:
     """Upload image to imgbb and return URL"""
     if not IMGBB_API_KEY:
+        print("[IMGBB] ERROR: IMGBB_API_KEY not configured")
         return {"error": "IMGBB_API_KEY not configured"}
     
-    response = req.post(
-        "https://api.imgbb.com/1/upload",
-        data={
-            "key": IMGBB_API_KEY,
-            "image": image_base64
-        }
-    )
+    # Check base64 size
+    size_mb = len(image_base64) / (1024 * 1024)
+    print(f"[IMGBB] Uploading image, base64 size: {size_mb:.2f} MB")
     
-    if response.status_code == 200:
-        data = response.json()
-        if data.get("success"):
-            return {
-                "url": data["data"]["url"],
-                "delete_url": data["data"]["delete_url"],
-                "thumb_url": data["data"]["thumb"]["url"]
-            }
-    return {"error": response.text}
+    if size_mb > 32:
+        print(f"[IMGBB] ERROR: Image too large ({size_mb:.2f} MB)")
+        return {"error": f"Image too large: {size_mb:.2f} MB"}
+    
+    try:
+        response = req.post(
+            "https://api.imgbb.com/1/upload",
+            data={
+                "key": IMGBB_API_KEY,
+                "image": image_base64
+            },
+            timeout=60
+        )
+        
+        print(f"[IMGBB] Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("success"):
+                print(f"[IMGBB] SUCCESS: {data['data']['url']}")
+                return {
+                    "url": data["data"]["url"],
+                    "delete_url": data["data"]["delete_url"],
+                    "thumb_url": data["data"]["thumb"]["url"]
+                }
+            else:
+                print(f"[IMGBB] API returned success=false: {data}")
+                return {"error": f"imgbb success=false: {data}"}
+        else:
+            print(f"[IMGBB] ERROR: {response.status_code} - {response.text[:500]}")
+            return {"error": f"imgbb status {response.status_code}: {response.text[:200]}"}
+    except Exception as e:
+        print(f"[IMGBB] EXCEPTION: {str(e)}")
+        return {"error": f"imgbb exception: {str(e)}"}
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
@@ -362,6 +384,8 @@ def analyze():
     data = request.json
     if not data or "image_base64" not in data:
         return jsonify({"error": "image_base64 required"}), 400
+    
+    print(f"[ANALYZE] Received image, base64 length: {len(data.get('image_base64', ''))}")
     result = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
     return jsonify(result)
 
@@ -400,6 +424,9 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     # Add photo if we have an image URL
     if image_url:
         fields["Photo"] = [{"url": image_url}]
+        print(f"[AIRTABLE] Adding photo URL: {image_url}")
+    else:
+        print("[AIRTABLE] WARNING: No image URL provided")
     
     response = req.post(url, headers=headers, json={"fields": fields})
     if response.status_code == 200:
@@ -438,9 +465,15 @@ def analyze_and_create():
     if not data or "image_base64" not in data:
         return jsonify({"error": "image_base64 required"}), 400
     
+    print(f"[ANALYZE-CREATE] Received request, base64 length: {len(data.get('image_base64', ''))}")
+    
     # 1. Upload image to imgbb
     image_upload = upload_to_imgbb(data["image_base64"])
     image_url = image_upload.get("url")
+    imgbb_error = image_upload.get("error")
+    
+    if imgbb_error:
+        print(f"[ANALYZE-CREATE] imgbb failed: {imgbb_error}")
     
     # 2. Analyze with Claude
     analysis = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
@@ -458,7 +491,8 @@ def analyze_and_create():
     return jsonify({
         "analysis": analysis,
         "created": result,
-        "image_url": image_url
+        "image_url": image_url,
+        "imgbb_error": imgbb_error
     })
 
 
