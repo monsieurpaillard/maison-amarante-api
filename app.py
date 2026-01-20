@@ -191,16 +191,28 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
         record_id = record["id"]
         
         # Generate QR code URL pointing to Airtable record
-        qr_url = f"https://airtable.com/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}/{record_id}"
+        airtable_url = f"https://airtable.com/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}/{record_id}"
         
-        # Update record with QR code URL
+        # Generate QR code image using free API
+        qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={airtable_url}"
+        
+        # Update record with QR code image and URL
         req.patch(
             f"{url}/{record_id}",
             headers=headers,
-            json={"fields": {"QR_Code_URL": qr_url}}
+            json={"fields": {
+                "QR_Code_URL": airtable_url,
+                "QR_Code": [{"url": qr_image_url}]
+            }}
         )
         
-        return {"success": True, "bouquet_id": bouquet_id, "record_id": record_id, "qr_url": qr_url}
+        return {
+            "success": True,
+            "bouquet_id": bouquet_id,
+            "record_id": record_id,
+            "qr_url": airtable_url,
+            "qr_image": qr_image_url
+        }
     return {"success": False, "error": response.text}
 
 
@@ -228,7 +240,7 @@ def analyze_and_create():
     result = create_bouquet_in_airtable(analysis, image_url)
     
     return jsonify({
-        "analysis": analysis, 
+        "analysis": analysis,
         "created": result,
         "image_url": image_url
     })
