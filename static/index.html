@@ -265,7 +265,7 @@
         <!-- Loading -->
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <p>Analyse en cours...</p>
+            <p id="loadingText">Analyse en cours...</p>
         </div>
         
         <!-- Success Message -->
@@ -357,28 +357,76 @@
         let currentImageBase64 = null;
         let analysisData = null;
         
-        function handlePhoto(input) {
+        // Compress and convert image to JPEG
+        function compressImage(file, maxWidth = 1200, quality = 0.8) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // Resize if needed
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Convert to JPEG base64
+                        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        const base64 = dataUrl.split(',')[1];
+                        
+                        resolve({
+                            base64: base64,
+                            dataUrl: dataUrl,
+                            mediaType: 'image/jpeg'
+                        });
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        async function handlePhoto(input) {
             const file = input.files[0];
             if (!file) return;
             
-            const reader = new FileReader();
-            reader.onload = function(e) {
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('loadingText').textContent = 'Compression de l\'image...';
+            
+            try {
+                // Compress image
+                const compressed = await compressImage(file);
+                
                 // Show preview
                 const preview = document.getElementById('photoPreview');
                 preview.classList.remove('empty');
-                preview.innerHTML = `<img src="${e.target.result}" alt="Bouquet">`;
+                preview.innerHTML = `<img src="${compressed.dataUrl}" alt="Bouquet">`;
                 
-                // Store base64 (remove data:image/xxx;base64, prefix)
-                currentImageBase64 = e.target.result.split(',')[1];
+                // Store base64
+                currentImageBase64 = compressed.base64;
                 
                 // Analyze
-                analyzePhoto();
-            };
-            reader.readAsDataURL(file);
+                document.getElementById('loadingText').textContent = 'Analyse en cours...';
+                await analyzePhoto();
+            } catch (error) {
+                alert('Erreur lors du traitement de l\'image: ' + error.message);
+                document.getElementById('loading').classList.remove('active');
+            }
         }
         
         async function analyzePhoto() {
-            document.getElementById('loading').classList.add('active');
             document.getElementById('fieldsSection').classList.add('hidden');
             document.getElementById('successMessage').classList.remove('active');
             
@@ -466,7 +514,7 @@
                     document.getElementById('successMessage').classList.add('active');
                     document.getElementById('bouquetId').textContent = `ID: ${result.created.bouquet_id}`;
                 } else {
-                    alert('Erreur: ' + (result.created?.error || 'Erreur inconnue'));
+                    alert('Erreur: ' + (result.created?.error || result.error || 'Erreur inconnue'));
                 }
             } catch (error) {
                 alert('Erreur: ' + error.message);
