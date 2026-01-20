@@ -8,6 +8,7 @@ import requests as req
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
+from urllib.parse import quote
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
@@ -17,6 +18,9 @@ AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
 AIRTABLE_BOUQUETS_TABLE = os.environ.get("AIRTABLE_BOUQUETS_TABLE", "tblIO7x8iR01vO5Bx")
 IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
+
+# Base URL for public pages
+BASE_URL = os.environ.get("BASE_URL", "https://web-production-37db3.up.railway.app")
 
 COULEURS_VALIDES = ["Rouge", "Blanc", "Rose", "Vert", "Jaune", "Orange", "Violet", "Bleu", "Noir"]
 STYLES_VALIDES = ["Bucolique", "Zen", "Moderne", "Coloré", "Classique"]
@@ -113,6 +117,218 @@ Liste TOUTES les fleurs et feuillages que tu identifies dans le bouquet."""
         return {"error": "JSON parse failed", "raw": text}
 
 
+def get_bouquet_by_id(bouquet_id: str) -> dict:
+    """Fetch bouquet from Airtable by Bouquet_ID"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
+    
+    response = req.get(
+        url,
+        headers=headers,
+        params={"filterByFormula": f"{{Bouquet_ID}}='{bouquet_id}'"}
+    )
+    
+    if response.status_code == 200:
+        records = response.json().get("records", [])
+        if records:
+            return records[0].get("fields", {})
+    return None
+
+
+# Public bouquet page (accessible via QR code)
+@app.route("/b/<bouquet_id>")
+def bouquet_page(bouquet_id):
+    """Public page for a bouquet - accessible without Airtable login"""
+    bouquet = get_bouquet_by_id(bouquet_id)
+    
+    if not bouquet:
+        return f"""
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Bouquet non trouvé - Maison Amarante</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                       max-width: 500px; margin: 0 auto; padding: 20px; text-align: center; }}
+                h1 {{ color: #8B7355; }}
+            </style>
+        </head>
+        <body>
+            <h1>🌸 Maison Amarante</h1>
+            <p>Bouquet <strong>{bouquet_id}</strong> non trouvé.</p>
+        </body>
+        </html>
+        """, 404
+    
+    # Get photo URL
+    photo_url = ""
+    if bouquet.get("Photo") and len(bouquet["Photo"]) > 0:
+        photo_url = bouquet["Photo"][0].get("url", "")
+    
+    # Build tags HTML
+    couleurs = bouquet.get("Couleurs", [])
+    fleurs = bouquet.get("Fleurs", [])
+    feuillages = bouquet.get("Feuillages", [])
+    
+    couleurs_html = " ".join([f'<span class="tag couleur">{c}</span>' for c in couleurs])
+    fleurs_html = " ".join([f'<span class="tag fleur">{f}</span>' for f in fleurs])
+    feuillages_html = " ".join([f'<span class="tag feuillage">{f}</span>' for f in feuillages])
+    
+    return f"""
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{bouquet.get('Nom', bouquet_id)} - Maison Amarante</title>
+        <style>
+            * {{ box-sizing: border-box; }}
+            body {{ 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                max-width: 500px; 
+                margin: 0 auto; 
+                padding: 20px;
+                background: #FDFBF7;
+                color: #333;
+            }}
+            .header {{
+                text-align: center;
+                margin-bottom: 20px;
+            }}
+            .header h1 {{
+                color: #8B7355;
+                font-size: 1.5em;
+                margin: 0;
+            }}
+            .header .subtitle {{
+                color: #A99B8D;
+                font-size: 0.9em;
+            }}
+            .photo {{
+                width: 100%;
+                border-radius: 12px;
+                margin-bottom: 20px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }}
+            .info {{
+                background: white;
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 15px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            }}
+            .info h2 {{
+                margin: 0 0 10px 0;
+                color: #8B7355;
+                font-size: 1.3em;
+            }}
+            .info-row {{
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid #F0EBE3;
+            }}
+            .info-row:last-child {{
+                border-bottom: none;
+            }}
+            .info-label {{
+                color: #A99B8D;
+            }}
+            .info-value {{
+                font-weight: 500;
+            }}
+            .tags {{
+                margin-top: 15px;
+            }}
+            .tags-title {{
+                color: #A99B8D;
+                font-size: 0.85em;
+                margin-bottom: 8px;
+            }}
+            .tag {{
+                display: inline-block;
+                padding: 4px 10px;
+                border-radius: 20px;
+                font-size: 0.85em;
+                margin: 2px;
+            }}
+            .tag.couleur {{
+                background: #F8E8E0;
+                color: #C4846C;
+            }}
+            .tag.fleur {{
+                background: #E8F0E8;
+                color: #6B8E6B;
+            }}
+            .tag.feuillage {{
+                background: #E0EBE8;
+                color: #5B8B7B;
+            }}
+            .footer {{
+                text-align: center;
+                color: #A99B8D;
+                font-size: 0.8em;
+                margin-top: 30px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🌸 Maison Amarante</h1>
+            <div class="subtitle">Fleurs en soie d'exception</div>
+        </div>
+        
+        {"<img class='photo' src='" + photo_url + "' alt='Photo du bouquet'>" if photo_url else ""}
+        
+        <div class="info">
+            <h2>{bouquet.get('Nom', 'Bouquet')}</h2>
+            <div class="info-row">
+                <span class="info-label">Référence</span>
+                <span class="info-value">{bouquet_id}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Style</span>
+                <span class="info-value">{bouquet.get('Style', '-')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Taille</span>
+                <span class="info-value">{bouquet.get('Taille', '-')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Saison</span>
+                <span class="info-value">{bouquet.get('Saison', '-')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Statut</span>
+                <span class="info-value">{bouquet.get('Statut', '-')}</span>
+            </div>
+            
+            <div class="tags">
+                <div class="tags-title">Couleurs</div>
+                {couleurs_html if couleurs_html else '<span class="tag couleur">-</span>'}
+            </div>
+            
+            <div class="tags">
+                <div class="tags-title">Fleurs</div>
+                {fleurs_html if fleurs_html else '<span class="tag fleur">-</span>'}
+            </div>
+            
+            <div class="tags">
+                <div class="tags-title">Feuillages</div>
+                {feuillages_html if feuillages_html else '<span class="tag feuillage">-</span>'}
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>maisonamarante.fr</p>
+        </div>
+    </body>
+    </html>
+    """
+
+
 # PWA Routes
 @app.route("/")
 def index():
@@ -190,18 +406,18 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
         record = response.json()
         record_id = record["id"]
         
-        # Generate QR code URL pointing to Airtable record
-        airtable_url = f"https://airtable.com/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}/{record_id}"
+        # Public URL for QR code (accessible without Airtable login)
+        public_url = f"{BASE_URL}/b/{bouquet_id}"
         
         # Generate QR code image using free API
-        qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={airtable_url}"
+        qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(public_url)}"
         
         # Update record with QR code image and URL
         req.patch(
             f"{url}/{record_id}",
             headers=headers,
             json={"fields": {
-                "QR_Code_URL": airtable_url,
+                "QR_Code_URL": public_url,
                 "QR_Code": [{"url": qr_image_url}]
             }}
         )
@@ -210,7 +426,7 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
             "success": True,
             "bouquet_id": bouquet_id,
             "record_id": record_id,
-            "qr_url": airtable_url,
+            "public_url": public_url,
             "qr_image": qr_image_url
         }
     return {"success": False, "error": response.text}
