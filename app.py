@@ -38,6 +38,20 @@ SUIVI_TABLE_ID = "tblkYF6GxgsrdgBRc"
 # Pennylane API base URL
 PENNYLANE_API_URL = "https://app.pennylane.com/api/external/v2"
 
+def extract_customer_name_from_label(label):
+    """Extrait le nom du client depuis le label Pennylane"""
+    if not label:
+        return "Client inconnu"
+    # Format: "Facture NOM CLIENT - F-2026-xxx (label généré)"
+    if " - " in label:
+        name = label.split(" - ")[0]
+        for prefix in ["Facture ", "Devis ", "Avoir "]:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+        return name.strip() or "Client inconnu"
+    return "Client inconnu"
+
+
 # Valeurs autorisées
 COULEURS_VALIDES = ["Rouge", "Blanc", "Rose", "Vert", "Jaune", "Orange", "Violet", "Bleu", "Noir"]
 STYLES_VALIDES = ["Bucolique", "Zen", "Moderne", "Coloré", "Classique"]
@@ -531,7 +545,7 @@ def sync_pennylane_to_suivi():
     for quote in quotes:
         quote_id = str(quote.get("id", ""))
         if quote_id and quote_id not in existing_by_pennylane_id:
-            customer_name = quote.get("customer", {}).get("name", "Client inconnu")
+            customer_name = extract_customer_name_from_label(quote.get("label", ""))
             amount = quote.get("amount", 0)
             
             card_fields = {
@@ -552,7 +566,7 @@ def sync_pennylane_to_suivi():
     for invoice in invoices:
         invoice_id = str(invoice.get("id", ""))
         if invoice_id and invoice_id not in existing_by_pennylane_id:
-            customer_name = invoice.get("customer", {}).get("name", "Client inconnu")
+            customer_name = extract_customer_name_from_label(invoice.get("label", ""))
             amount = invoice.get("amount", invoice.get("currency_amount", 0))
             
             card_fields = {
@@ -573,7 +587,7 @@ def sync_pennylane_to_suivi():
     for sub in subscriptions:
         sub_id = str(sub.get("id", ""))
         if sub_id and sub_id not in existing_by_pennylane_id:
-            customer_name = sub.get("customer", {}).get("name", "Client inconnu")
+            customer_name = extract_customer_name_from_label(sub.get("label", ""))
             
             card_fields = {
                 "Nom du Client": customer_name,
