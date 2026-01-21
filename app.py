@@ -647,7 +647,7 @@ def sync_suivi_to_clients():
         existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
         
         if statut in active_statuts:
-            parsed = parse_client_notes_with_claude(client_name, notes) if notes else {}
+            parsed = {}  # Disabled for performance
             
             client_fields = {
                 "Nom": client_name,
