@@ -537,7 +537,7 @@ def sync_pennylane_to_suivi():
             card_fields = {
                 "Nom du Client": customer_name,
                 "ID Pennylane": quote_id,
-                "Montant": f"€{amount}",
+                "Montant": float(amount) if amount else 0,
                 "Statut": "Devis",
                 "Date": datetime.now().strftime("%Y-%m-%d")
             }
@@ -558,7 +558,7 @@ def sync_pennylane_to_suivi():
             card_fields = {
                 "Nom du Client": customer_name,
                 "ID Pennylane": invoice_id,
-                "Montant": f"€{amount}",
+                "Montant": float(amount) if amount else 0,
                 "Statut": "Factures",
                 "Date": datetime.now().strftime("%Y-%m-%d")
             }
