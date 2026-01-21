@@ -1,5 +1,7 @@
 """
-Maison Amarante - API Analyse Bouquets + PWA
+Maison Amarante - API Analyse Bouquets + PWA + Sync
+===================================================
+v3 - Ajout du système de synchronisation
 """
 
 import os
@@ -7,21 +9,27 @@ import json
 import requests as req
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from datetime import datetime
-from urllib.parse import quote
+from datetime import datetime, timedelta
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
+# Configuration
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
-AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
-AIRTABLE_BOUQUETS_TABLE = os.environ.get("AIRTABLE_BOUQUETS_TABLE", "tblIO7x8iR01vO5Bx")
 IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
 
-# Base URL for public pages
-BASE_URL = os.environ.get("BASE_URL", "https://web-production-37db3.up.railway.app")
+# Maison Amarante DB (opérationnel)
+AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
+AIRTABLE_BOUQUETS_TABLE = os.environ.get("AIRTABLE_BOUQUETS_TABLE", "tblIO7x8iR01vO5Bx")
+AIRTABLE_CLIENTS_TABLE = os.environ.get("AIRTABLE_CLIENTS_TABLE", "tblOJnWeVjfkA7Cfs")
+AIRTABLE_LIVRAISONS_TABLE = os.environ.get("AIRTABLE_LIVRAISONS_TABLE", "")  # À remplir
 
+# Suivi Facturation (commercial)
+SUIVI_BASE_ID = "appxlOtjRVYqbW85l"
+SUIVI_TABLE_ID = "tblkYF6GxgsrdgBRc"
+
+# Valeurs autorisées
 COULEURS_VALIDES = ["Rouge", "Blanc", "Rose", "Vert", "Jaune", "Orange", "Violet", "Bleu", "Noir"]
 STYLES_VALIDES = ["Bucolique", "Zen", "Moderne", "Coloré", "Classique"]
 TAILLES_VALIDES = ["Petit", "Moyen", "Grand", "Masterpiece"]
@@ -30,55 +38,45 @@ PERSONAS_VALIDES = ["Coiffeur", "Bureau", "Hôtel", "Restaurant", "Retail"]
 AMBIANCES_VALIDES = ["Romantique", "Épuré", "Festif", "Corporate", "Champêtre", "Luxe"]
 FLEURS_VALIDES = ["Rose", "Pivoine", "Hortensia", "Orchidée", "Lys", "Tulipe", "Renoncule", "Dahlia", "Gypsophile", "Lavande", "Anthurium", "Amarante", "Camélia", "Œillet", "Marguerite", "Anémone", "Freesia", "Gerbera", "Iris", "Jasmin", "Jonquille", "Lilas", "Magnolia", "Muguet", "Narcisse", "Pavot", "Protea", "Tournesol", "Zinnia", "Alstroemeria", "Chrysanthème", "Cosmos", "Delphinium", "Gardénia", "Hibiscus", "Jacinthe", "Liseron", "Lotus", "Lisianthus", "Wax flower", "Chardon", "Craspedia", "Statice", "Astilbe", "Agapanthe"]
 FEUILLAGES_VALIDES = ["Eucalyptus", "Fougère", "Lierre", "Olivier", "Monstera", "Palmier", "Ruscus", "Asparagus", "Pittosporum", "Saule", "Buis", "Romarin", "Laurier", "Bambou", "Graminées", "Ficus", "Philodendron", "Hosta", "Alocasia", "Calathea", "Cyprès", "Thuya", "Mimosa", "Genêt", "Bruyère", "Salal", "Galax", "Leucadendron", "Viburnum", "Skimmia"]
+FREQUENCES_VALIDES = ["Hebdomadaire", "Bimensuel", "Mensuel", "Bimestriel", "Trimestriel", "Semestriel"]
+CRENEAUX_VALIDES = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Matin", "Après-midi"]
 
+# ==================== HELPERS ====================
 
 def upload_to_imgbb(image_base64: str) -> dict:
     """Upload image to imgbb and return URL"""
     if not IMGBB_API_KEY:
-        print("[IMGBB] ERROR: IMGBB_API_KEY not configured")
+        print("[IMGBB] No API key configured")
         return {"error": "IMGBB_API_KEY not configured"}
     
-    # Check base64 size
-    size_mb = len(image_base64) / (1024 * 1024)
-    print(f"[IMGBB] Uploading image, base64 size: {size_mb:.2f} MB")
+    print(f"[IMGBB] Uploading image, base64 size: {len(image_base64) / 1024 / 1024:.2f} MB")
     
-    if size_mb > 32:
-        print(f"[IMGBB] ERROR: Image too large ({size_mb:.2f} MB)")
-        return {"error": f"Image too large: {size_mb:.2f} MB"}
+    response = req.post(
+        "https://api.imgbb.com/1/upload",
+        data={
+            "key": IMGBB_API_KEY,
+            "image": image_base64
+        }
+    )
     
-    try:
-        response = req.post(
-            "https://api.imgbb.com/1/upload",
-            data={
-                "key": IMGBB_API_KEY,
-                "image": image_base64
-            },
-            timeout=60
-        )
-        
-        print(f"[IMGBB] Response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("success"):
-                print(f"[IMGBB] SUCCESS: {data['data']['url']}")
-                return {
-                    "url": data["data"]["url"],
-                    "delete_url": data["data"]["delete_url"],
-                    "thumb_url": data["data"]["thumb"]["url"]
-                }
-            else:
-                print(f"[IMGBB] API returned success=false: {data}")
-                return {"error": f"imgbb success=false: {data}"}
-        else:
-            print(f"[IMGBB] ERROR: {response.status_code} - {response.text[:500]}")
-            return {"error": f"imgbb status {response.status_code}: {response.text[:200]}"}
-    except Exception as e:
-        print(f"[IMGBB] EXCEPTION: {str(e)}")
-        return {"error": f"imgbb exception: {str(e)}"}
+    print(f"[IMGBB] Response status: {response.status_code}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        if data.get("success"):
+            print(f"[IMGBB] SUCCESS: {data['data']['url']}")
+            return {
+                "url": data["data"]["url"],
+                "delete_url": data["data"]["delete_url"],
+                "thumb_url": data["data"]["thumb"]["url"]
+            }
+    
+    print(f"[IMGBB] ERROR: {response.text}")
+    return {"error": response.text}
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
+    """Analyse une image de bouquet avec Claude Vision"""
     prompt = f"""Analyse cette photo de bouquet de fleurs en soie.
 
 Réponds UNIQUEMENT en JSON valide:
@@ -139,221 +137,429 @@ Liste TOUTES les fleurs et feuillages que tu identifies dans le bouquet."""
         return {"error": "JSON parse failed", "raw": text}
 
 
-def get_bouquet_by_id(bouquet_id: str) -> dict:
-    """Fetch bouquet from Airtable by Bouquet_ID"""
-    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
-    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
+def parse_client_notes_with_claude(client_name: str, notes: str) -> dict:
+    """Parse les notes libres d'un client pour extraire les préférences"""
+    if not notes or notes.strip() == "":
+        return {}
     
-    response = req.get(
-        url,
-        headers=headers,
-        params={"filterByFormula": f"{{Bouquet_ID}}='{bouquet_id}'"}
+    prompt = f"""Analyse ces notes sur le client "{client_name}" et extrais les informations structurées.
+
+Notes:
+{notes}
+
+Réponds UNIQUEMENT en JSON valide avec les champs trouvés (omets les champs non mentionnés):
+
+{{
+    "persona": "type de client",
+    "frequence": "fréquence de livraison",
+    "nb_bouquets": nombre,
+    "pref_couleurs": ["couleur1", "couleur2"],
+    "pref_style": ["style1"],
+    "tailles_demandees": ["taille1"],
+    "creneau_prefere": "jour ou moment préféré",
+    "adresse": "adresse si mentionnée",
+    "email": "email si mentionné",
+    "telephone": "téléphone si mentionné",
+    "instructions_speciales": "autres instructions importantes"
+}}
+
+Valeurs possibles:
+- persona: {PERSONAS_VALIDES}
+- frequence: {FREQUENCES_VALIDES}
+- pref_couleurs: {COULEURS_VALIDES}
+- pref_style: {STYLES_VALIDES}
+- tailles_demandees: {TAILLES_VALIDES}
+- creneau_prefere: {CRENEAUX_VALIDES}
+
+Important: 
+- Ne devine pas, extrais uniquement ce qui est explicitement mentionné
+- Pour nb_bouquets, mets un nombre entier
+- Réponds UNIQUEMENT avec le JSON, sans texte avant ou après"""
+
+    response = req.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        },
+        json={
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": prompt}]
+        }
     )
     
+    if response.status_code != 200:
+        print(f"[PARSE] Error: {response.text}")
+        return {}
+    
+    text = response.json()["content"][0]["text"].strip()
+    if text.startswith("```"):
+        text = text.split("```")[1].replace("json", "").strip()
+    
+    try:
+        result = json.loads(text)
+        # Valider les valeurs
+        if result.get("persona") and result["persona"] not in PERSONAS_VALIDES:
+            del result["persona"]
+        if result.get("frequence") and result["frequence"] not in FREQUENCES_VALIDES:
+            del result["frequence"]
+        if result.get("pref_couleurs"):
+            result["pref_couleurs"] = [c for c in result["pref_couleurs"] if c in COULEURS_VALIDES]
+        if result.get("pref_style"):
+            result["pref_style"] = [s for s in result["pref_style"] if s in STYLES_VALIDES]
+        if result.get("tailles_demandees"):
+            result["tailles_demandees"] = [t for t in result["tailles_demandees"] if t in TAILLES_VALIDES]
+        if result.get("creneau_prefere") and result["creneau_prefere"] not in CRENEAUX_VALIDES:
+            del result["creneau_prefere"]
+        return result
+    except Exception as e:
+        print(f"[PARSE] JSON parse failed: {e}, raw: {text}")
+        return {}
+
+
+# ==================== AIRTABLE HELPERS ====================
+
+def get_airtable_headers():
+    return {
+        "Authorization": f"Bearer {AIRTABLE_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+
+def get_suivi_cards():
+    """Récupère toutes les cards de Suivi Facturation"""
+    url = f"https://api.airtable.com/v0/{SUIVI_BASE_ID}/{SUIVI_TABLE_ID}"
+    headers = get_airtable_headers()
+    
+    all_records = []
+    offset = None
+    
+    while True:
+        params = {"pageSize": 100}
+        if offset:
+            params["offset"] = offset
+        
+        response = req.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            print(f"[SUIVI] Error fetching cards: {response.text}")
+            break
+        
+        data = response.json()
+        all_records.extend(data.get("records", []))
+        
+        offset = data.get("offset")
+        if not offset:
+            break
+    
+    print(f"[SUIVI] Fetched {len(all_records)} cards")
+    return all_records
+
+
+def get_existing_clients():
+    """Récupère tous les clients existants dans Maison Amarante DB"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CLIENTS_TABLE}"
+    headers = get_airtable_headers()
+    
+    all_records = []
+    offset = None
+    
+    while True:
+        params = {"pageSize": 100}
+        if offset:
+            params["offset"] = offset
+        
+        response = req.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            print(f"[CLIENTS] Error fetching: {response.text}")
+            break
+        
+        data = response.json()
+        all_records.extend(data.get("records", []))
+        
+        offset = data.get("offset")
+        if not offset:
+            break
+    
+    # Index par nom et par ID Pennylane
+    by_name = {}
+    by_pennylane_id = {}
+    for record in all_records:
+        name = record.get("fields", {}).get("Nom", "")
+        pennylane_id = record.get("fields", {}).get("ID_Pennylane", "")
+        if name:
+            by_name[name.upper()] = record
+        if pennylane_id:
+            by_pennylane_id[pennylane_id] = record
+    
+    return by_name, by_pennylane_id
+
+
+def create_client(fields: dict) -> dict:
+    """Crée un client dans Maison Amarante DB"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CLIENTS_TABLE}"
+    headers = get_airtable_headers()
+    
+    response = req.post(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        return {"success": True, "record": response.json()}
+    else:
+        print(f"[CLIENTS] Create error: {response.text}")
+        return {"success": False, "error": response.text}
+
+
+def update_client(record_id: str, fields: dict) -> dict:
+    """Met à jour un client existant"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CLIENTS_TABLE}/{record_id}"
+    headers = get_airtable_headers()
+    
+    response = req.patch(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        return {"success": True, "record": response.json()}
+    else:
+        print(f"[CLIENTS] Update error: {response.text}")
+        return {"success": False, "error": response.text}
+
+
+def create_livraison(client_record_id: str, livraison_type: str, notes: str = "") -> dict:
+    """Crée une livraison à planifier"""
+    if not AIRTABLE_LIVRAISONS_TABLE:
+        print("[LIVRAISONS] Table ID not configured")
+        return {"success": False, "error": "LIVRAISONS table not configured"}
+    
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_LIVRAISONS_TABLE}"
+    headers = get_airtable_headers()
+    
+    fields = {
+        "Client": [client_record_id],
+        "Statut": "À planifier",
+        "Type": livraison_type
+    }
+    if notes:
+        fields["Notes"] = notes
+    
+    response = req.post(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        return {"success": True, "record": response.json()}
+    else:
+        print(f"[LIVRAISONS] Create error: {response.text}")
+        return {"success": False, "error": response.text}
+
+
+def get_pending_livraisons_for_client(client_record_id: str) -> list:
+    """Vérifie si le client a déjà des livraisons en attente"""
+    if not AIRTABLE_LIVRAISONS_TABLE:
+        return []
+    
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_LIVRAISONS_TABLE}"
+    headers = get_airtable_headers()
+    
+    # Filtre sur le client et statut "À planifier"
+    params = {
+        "filterByFormula": f"AND(FIND('{client_record_id}', ARRAYJOIN(Client)), Statut = 'À planifier')"
+    }
+    
+    response = req.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("records", [])
+    return []
+
+
+# ==================== SYNC LOGIC ====================
+
+def sync_all():
+    """Synchronise Suivi Facturation vers Maison Amarante DB"""
+    results = {
+        "clients_created": 0,
+        "clients_updated": 0,
+        "clients_deactivated": 0,
+        "livraisons_created": 0,
+        "errors": [],
+        "details": []
+    }
+    
+    # 1. Récupérer les données
+    cards = get_suivi_cards()
+    clients_by_name, clients_by_pennylane = get_existing_clients()
+    
+    # 2. Traiter chaque card
+    for card in cards:
+        fields = card.get("fields", {})
+        client_name = fields.get("Nom du Client", "").strip()
+        statut = fields.get("Statut", "")
+        notes = fields.get("Notes", "")
+        pennylane_id = str(fields.get("ID Pennylane", ""))
+        montant = fields.get("Montant", "")
+        
+        if not client_name:
+            continue
+        
+        # Statuts actifs = à traiter
+        active_statuts = ["Factures", "Abonnements", "Essai gratuit"]
+        inactive_statuts = ["Archives", "Abonnement arrêté", "Avoirs"]
+        
+        # Chercher le client existant
+        existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
+        
+        if statut in active_statuts:
+            # Parser les notes avec Claude
+            parsed = parse_client_notes_with_claude(client_name, notes) if notes else {}
+            
+            # Construire les champs client
+            client_fields = {
+                "Nom": client_name,
+                "Actif": True
+            }
+            
+            if pennylane_id:
+                client_fields["ID_Pennylane"] = pennylane_id
+            
+            # Ajouter les infos parsées
+            if parsed.get("persona"):
+                client_fields["Persona"] = parsed["persona"]
+            if parsed.get("frequence"):
+                client_fields["Fréquence"] = parsed["frequence"]
+            if parsed.get("nb_bouquets"):
+                client_fields["Nb_Bouquets"] = parsed["nb_bouquets"]
+            if parsed.get("pref_couleurs"):
+                client_fields["Pref_Couleurs"] = parsed["pref_couleurs"]
+            if parsed.get("pref_style"):
+                client_fields["Pref_Style"] = parsed["pref_style"]
+            if parsed.get("tailles_demandees"):
+                client_fields["Tailles_Demandées"] = parsed["tailles_demandees"]
+            if parsed.get("creneau_prefere"):
+                client_fields["Créneau_Préféré"] = parsed["creneau_prefere"]
+            if parsed.get("adresse"):
+                client_fields["Adresse"] = parsed["adresse"]
+            if parsed.get("instructions_speciales"):
+                client_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
+            
+            # Créer ou mettre à jour le client
+            if existing_client:
+                record_id = existing_client["id"]
+                result = update_client(record_id, client_fields)
+                if result["success"]:
+                    results["clients_updated"] += 1
+                    results["details"].append(f"✏️ Client mis à jour: {client_name}")
+                else:
+                    results["errors"].append(f"Erreur update {client_name}: {result.get('error')}")
+            else:
+                # Valeurs par défaut pour nouveau client
+                if "Fréquence" not in client_fields:
+                    client_fields["Fréquence"] = "Mensuel"
+                if "Nb_Bouquets" not in client_fields:
+                    client_fields["Nb_Bouquets"] = 1
+                
+                result = create_client(client_fields)
+                if result["success"]:
+                    results["clients_created"] += 1
+                    results["details"].append(f"✅ Client créé: {client_name}")
+                    record_id = result["record"]["id"]
+                else:
+                    results["errors"].append(f"Erreur création {client_name}: {result.get('error')}")
+                    continue
+            
+            # Créer une livraison si pas déjà en attente
+            pending = get_pending_livraisons_for_client(record_id)
+            if not pending:
+                livraison_type = "Essai gratuit" if statut == "Essai gratuit" else ("Abonnement" if statut == "Abonnements" else "One-shot")
+                liv_result = create_livraison(record_id, livraison_type, notes)
+                if liv_result["success"]:
+                    results["livraisons_created"] += 1
+                    results["details"].append(f"📦 Livraison créée pour: {client_name} ({livraison_type})")
+        
+        elif statut in inactive_statuts:
+            # Désactiver le client s'il existe
+            if existing_client:
+                record_id = existing_client["id"]
+                result = update_client(record_id, {"Actif": False})
+                if result["success"]:
+                    results["clients_deactivated"] += 1
+                    results["details"].append(f"❌ Client désactivé: {client_name}")
+    
+    return results
+
+
+# ==================== BOUQUETS (existing code) ====================
+
+def get_next_bouquet_id():
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = get_airtable_headers()
+    response = req.get(url, headers=headers, params={"pageSize": 100})
+    count = len(response.json().get("records", [])) if response.status_code == 200 else 0
+    return f"MA-{datetime.now().year}-{count + 1:05d}"
+
+
+def get_bouquet_by_id(bouquet_id: str) -> dict:
+    """Récupère un bouquet par son Bouquet_ID"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = get_airtable_headers()
+    params = {"filterByFormula": f"{{Bouquet_ID}} = '{bouquet_id}'"}
+    
+    response = req.get(url, headers=headers, params=params)
     if response.status_code == 200:
         records = response.json().get("records", [])
         if records:
-            return records[0].get("fields", {})
+            return records[0]
     return None
 
 
-# Public bouquet page (accessible via QR code)
-@app.route("/b/<bouquet_id>")
-def bouquet_page(bouquet_id):
-    """Public page for a bouquet - accessible without Airtable login"""
-    bouquet = get_bouquet_by_id(bouquet_id)
+def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = get_airtable_headers()
     
-    if not bouquet:
-        return f"""
-        <!DOCTYPE html>
-        <html lang="fr">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Bouquet non trouvé - Maison Amarante</title>
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                       max-width: 500px; margin: 0 auto; padding: 20px; text-align: center; }}
-                h1 {{ color: #8B7355; }}
-            </style>
-        </head>
-        <body>
-            <h1>🌸 Maison Amarante</h1>
-            <p>Bouquet <strong>{bouquet_id}</strong> non trouvé.</p>
-        </body>
-        </html>
-        """, 404
+    bouquet_id = get_next_bouquet_id()
     
-    # Get photo URL
-    photo_url = ""
-    if bouquet.get("Photo") and len(bouquet["Photo"]) > 0:
-        photo_url = bouquet["Photo"][0].get("url", "")
+    # URL publique pour le QR code
+    public_url = f"https://web-production-37db3.up.railway.app/b/{bouquet_id}"
+    qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={public_url}"
     
-    # Build tags HTML
-    couleurs = bouquet.get("Couleurs", [])
-    fleurs = bouquet.get("Fleurs", [])
-    feuillages = bouquet.get("Feuillages", [])
+    fields = {
+        "Bouquet_ID": bouquet_id,
+        "Nom": data.get("nom", f"Bouquet {data.get('style', '')}"),
+        "Taille": data.get("taille", data.get("taille_suggeree", "Moyen")),
+        "Couleurs": data.get("couleurs", []),
+        "Style": data.get("style", "Classique"),
+        "Statut": "Disponible",
+        "Condition": 5,
+        "Rotations": 0,
+        "Date_Création": datetime.now().strftime("%Y-%m-%d"),
+        "Saison": data.get("saison", "Toutes saisons"),
+        "Personas_Suggérées": data.get("personas", []),
+        "Ambiance": data.get("ambiance", []),
+        "Fleurs": data.get("fleurs", []),
+        "Feuillages": data.get("feuillages", []),
+        "Notes": data.get("description", ""),
+        "QR_Code_URL": public_url
+    }
     
-    couleurs_html = " ".join([f'<span class="tag couleur">{c}</span>' for c in couleurs])
-    fleurs_html = " ".join([f'<span class="tag fleur">{f}</span>' for f in fleurs])
-    feuillages_html = " ".join([f'<span class="tag feuillage">{f}</span>' for f in feuillages])
+    if image_url:
+        fields["Photo"] = [{"url": image_url}]
+        fields["QR_Code"] = [{"url": qr_image_url}]
     
-    return f"""
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{bouquet.get('Nom', bouquet_id)} - Maison Amarante</title>
-        <style>
-            * {{ box-sizing: border-box; }}
-            body {{ 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                max-width: 500px; 
-                margin: 0 auto; 
-                padding: 20px;
-                background: #FDFBF7;
-                color: #333;
-            }}
-            .header {{
-                text-align: center;
-                margin-bottom: 20px;
-            }}
-            .header h1 {{
-                color: #8B7355;
-                font-size: 1.5em;
-                margin: 0;
-            }}
-            .header .subtitle {{
-                color: #A99B8D;
-                font-size: 0.9em;
-            }}
-            .photo {{
-                width: 100%;
-                border-radius: 12px;
-                margin-bottom: 20px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            }}
-            .info {{
-                background: white;
-                border-radius: 12px;
-                padding: 20px;
-                margin-bottom: 15px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            }}
-            .info h2 {{
-                margin: 0 0 10px 0;
-                color: #8B7355;
-                font-size: 1.3em;
-            }}
-            .info-row {{
-                display: flex;
-                justify-content: space-between;
-                padding: 8px 0;
-                border-bottom: 1px solid #F0EBE3;
-            }}
-            .info-row:last-child {{
-                border-bottom: none;
-            }}
-            .info-label {{
-                color: #A99B8D;
-            }}
-            .info-value {{
-                font-weight: 500;
-            }}
-            .tags {{
-                margin-top: 15px;
-            }}
-            .tags-title {{
-                color: #A99B8D;
-                font-size: 0.85em;
-                margin-bottom: 8px;
-            }}
-            .tag {{
-                display: inline-block;
-                padding: 4px 10px;
-                border-radius: 20px;
-                font-size: 0.85em;
-                margin: 2px;
-            }}
-            .tag.couleur {{
-                background: #F8E8E0;
-                color: #C4846C;
-            }}
-            .tag.fleur {{
-                background: #E8F0E8;
-                color: #6B8E6B;
-            }}
-            .tag.feuillage {{
-                background: #E0EBE8;
-                color: #5B8B7B;
-            }}
-            .footer {{
-                text-align: center;
-                color: #A99B8D;
-                font-size: 0.8em;
-                margin-top: 30px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>🌸 Maison Amarante</h1>
-            <div class="subtitle">Fleurs en soie d'exception</div>
-        </div>
-        
-        {"<img class='photo' src='" + photo_url + "' alt='Photo du bouquet'>" if photo_url else ""}
-        
-        <div class="info">
-            <h2>{bouquet.get('Nom', 'Bouquet')}</h2>
-            <div class="info-row">
-                <span class="info-label">Référence</span>
-                <span class="info-value">{bouquet_id}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Style</span>
-                <span class="info-value">{bouquet.get('Style', '-')}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Taille</span>
-                <span class="info-value">{bouquet.get('Taille', '-')}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Saison</span>
-                <span class="info-value">{bouquet.get('Saison', '-')}</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Statut</span>
-                <span class="info-value">{bouquet.get('Statut', '-')}</span>
-            </div>
-            
-            <div class="tags">
-                <div class="tags-title">Couleurs</div>
-                {couleurs_html if couleurs_html else '<span class="tag couleur">-</span>'}
-            </div>
-            
-            <div class="tags">
-                <div class="tags-title">Fleurs</div>
-                {fleurs_html if fleurs_html else '<span class="tag fleur">-</span>'}
-            </div>
-            
-            <div class="tags">
-                <div class="tags-title">Feuillages</div>
-                {feuillages_html if feuillages_html else '<span class="tag feuillage">-</span>'}
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>maisonamarante.fr</p>
-        </div>
-    </body>
-    </html>
-    """
+    response = req.post(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        record = response.json()
+        return {
+            "success": True,
+            "bouquet_id": bouquet_id,
+            "record_id": record["id"],
+            "public_url": public_url,
+            "qr_image": qr_image_url
+        }
+    return {"success": False, "error": response.text}
 
+
+# ==================== ROUTES ====================
 
 # PWA Routes
 @app.route("/")
 def index():
+    return send_from_directory('static', 'index.html')
+
+@app.route("/admin")
+def admin():
     return send_from_directory('static', 'index.html')
 
 @app.route("/manifest.json")
@@ -373,10 +579,100 @@ def icon_512():
     return send_from_directory('static', 'icon-512.png')
 
 
+# Page publique bouquet
+@app.route("/b/<bouquet_id>")
+def bouquet_page(bouquet_id):
+    bouquet = get_bouquet_by_id(bouquet_id)
+    
+    if not bouquet:
+        return f"""
+        <!DOCTYPE html>
+        <html><head><meta charset="UTF-8"><title>Bouquet non trouvé</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>body{{font-family:system-ui;padding:20px;text-align:center;}}h1{{color:#e74c3c;}}</style>
+        </head><body><h1>Bouquet non trouvé</h1><p>Le bouquet {bouquet_id} n'existe pas.</p></body></html>
+        """, 404
+    
+    fields = bouquet.get("fields", {})
+    nom = fields.get("Nom", bouquet_id)
+    photo_url = ""
+    if fields.get("Photo"):
+        photo_url = fields["Photo"][0].get("url", "")
+    
+    style = fields.get("Style", "")
+    taille = fields.get("Taille", "")
+    couleurs = ", ".join(fields.get("Couleurs", []))
+    fleurs = ", ".join(fields.get("Fleurs", []))
+    feuillages = ", ".join(fields.get("Feuillages", []))
+    statut = fields.get("Statut", "")
+    condition = fields.get("Condition", "")
+    
+    return f"""
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{nom} - Maison Amarante</title>
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+            body {{ font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; min-height: 100vh; }}
+            .container {{ max-width: 500px; margin: 0 auto; background: white; min-height: 100vh; }}
+            .photo {{ width: 100%; aspect-ratio: 1; object-fit: cover; background: #eee; }}
+            .content {{ padding: 20px; }}
+            h1 {{ font-size: 24px; margin-bottom: 5px; color: #2d3436; }}
+            .ref {{ color: #636e72; font-size: 14px; margin-bottom: 20px; }}
+            .info {{ display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }}
+            .tag {{ background: #dfe6e9; padding: 6px 12px; border-radius: 20px; font-size: 13px; }}
+            .tag.style {{ background: #a29bfe; color: white; }}
+            .tag.taille {{ background: #74b9ff; color: white; }}
+            .section {{ margin-top: 20px; }}
+            .section-title {{ font-size: 12px; text-transform: uppercase; color: #636e72; margin-bottom: 8px; }}
+            .section-content {{ color: #2d3436; }}
+            .statut {{ display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }}
+            .statut.disponible {{ background: #00b894; color: white; }}
+            .statut.service {{ background: #fdcb6e; color: #2d3436; }}
+            .logo {{ text-align: center; padding: 20px; color: #b2bec3; font-size: 14px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            {'<img src="' + photo_url + '" class="photo" alt="' + nom + '">' if photo_url else '<div class="photo"></div>'}
+            <div class="content">
+                <h1>{nom}</h1>
+                <p class="ref">{bouquet_id}</p>
+                <div class="info">
+                    {f'<span class="tag style">{style}</span>' if style else ''}
+                    {f'<span class="tag taille">{taille}</span>' if taille else ''}
+                    <span class="statut {'disponible' if statut == 'Disponible' else 'service'}">{statut}</span>
+                </div>
+                {f'<div class="section"><div class="section-title">Couleurs</div><div class="section-content">{couleurs}</div></div>' if couleurs else ''}
+                {f'<div class="section"><div class="section-title">Fleurs</div><div class="section-content">{fleurs}</div></div>' if fleurs else ''}
+                {f'<div class="section"><div class="section-title">Feuillages</div><div class="section-content">{feuillages}</div></div>' if feuillages else ''}
+                {f'<div class="section"><div class="section-title">Condition</div><div class="section-content">{condition}/5</div></div>' if condition else ''}
+            </div>
+            <div class="logo">Maison Amarante</div>
+        </div>
+    </body>
+    </html>
+    """
+
+
 # API Routes
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "Maison Amarante Bouquet Analyzer"})
+    return jsonify({"status": "ok", "service": "Maison Amarante API v3"})
+
+
+@app.route("/api/sync", methods=["POST"])
+def api_sync():
+    """Endpoint de synchronisation"""
+    try:
+        results = sync_all()
+        return jsonify(results)
+    except Exception as e:
+        print(f"[SYNC] Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/analyze", methods=["POST"])
@@ -384,79 +680,8 @@ def analyze():
     data = request.json
     if not data or "image_base64" not in data:
         return jsonify({"error": "image_base64 required"}), 400
-    
-    print(f"[ANALYZE] Received image, base64 length: {len(data.get('image_base64', ''))}")
     result = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
     return jsonify(result)
-
-
-def get_next_bouquet_id():
-    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
-    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
-    response = req.get(url, headers=headers, params={"pageSize": 100})
-    count = len(response.json().get("records", [])) if response.status_code == 200 else 0
-    return f"MA-{datetime.now().year}-{count + 1:05d}"
-
-
-def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
-    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
-    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", "Content-Type": "application/json"}
-    
-    bouquet_id = get_next_bouquet_id()
-    fields = {
-        "Bouquet_ID": bouquet_id,
-        "Nom": data.get("nom", f"Bouquet {data.get('style', '')}"),
-        "Taille": data.get("taille", data.get("taille_suggeree", "Moyen")),
-        "Couleurs": data.get("couleurs", []),
-        "Style": data.get("style", "Classique"),
-        "Statut": "Disponible",
-        "Condition": 5,
-        "Rotations": 0,
-        "Date_Création": datetime.now().strftime("%Y-%m-%d"),
-        "Saison": data.get("saison", "Toutes saisons"),
-        "Personas_Suggérées": data.get("personas", []),
-        "Ambiance": data.get("ambiance", []),
-        "Fleurs": data.get("fleurs", []),
-        "Feuillages": data.get("feuillages", []),
-        "Notes": data.get("description", "")
-    }
-    
-    # Add photo if we have an image URL
-    if image_url:
-        fields["Photo"] = [{"url": image_url}]
-        print(f"[AIRTABLE] Adding photo URL: {image_url}")
-    else:
-        print("[AIRTABLE] WARNING: No image URL provided")
-    
-    response = req.post(url, headers=headers, json={"fields": fields})
-    if response.status_code == 200:
-        record = response.json()
-        record_id = record["id"]
-        
-        # Public URL for QR code (accessible without Airtable login)
-        public_url = f"{BASE_URL}/b/{bouquet_id}"
-        
-        # Generate QR code image using free API
-        qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(public_url)}"
-        
-        # Update record with QR code image and URL
-        req.patch(
-            f"{url}/{record_id}",
-            headers=headers,
-            json={"fields": {
-                "QR_Code_URL": public_url,
-                "QR_Code": [{"url": qr_image_url}]
-            }}
-        )
-        
-        return {
-            "success": True,
-            "bouquet_id": bouquet_id,
-            "record_id": record_id,
-            "public_url": public_url,
-            "qr_image": qr_image_url
-        }
-    return {"success": False, "error": response.text}
 
 
 @app.route("/analyze-and-create", methods=["POST"])
@@ -465,15 +690,9 @@ def analyze_and_create():
     if not data or "image_base64" not in data:
         return jsonify({"error": "image_base64 required"}), 400
     
-    print(f"[ANALYZE-CREATE] Received request, base64 length: {len(data.get('image_base64', ''))}")
-    
     # 1. Upload image to imgbb
     image_upload = upload_to_imgbb(data["image_base64"])
     image_url = image_upload.get("url")
-    imgbb_error = image_upload.get("error")
-    
-    if imgbb_error:
-        print(f"[ANALYZE-CREATE] imgbb failed: {imgbb_error}")
     
     # 2. Analyze with Claude
     analysis = analyze_image_with_claude(data["image_base64"], data.get("media_type", "image/jpeg"))
@@ -491,8 +710,7 @@ def analyze_and_create():
     return jsonify({
         "analysis": analysis,
         "created": result,
-        "image_url": image_url,
-        "imgbb_error": imgbb_error
+        "image_url": image_url
     })
 
 
