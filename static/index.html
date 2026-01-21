@@ -10,11 +10,7 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/icon-192.png">
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -33,10 +29,7 @@
             z-index: 100;
         }
         
-        .header h1 {
-            font-size: 20px;
-            font-weight: 600;
-        }
+        .header h1 { font-size: 20px; font-weight: 600; }
         
         .tabs {
             display: flex;
@@ -45,13 +38,15 @@
             position: sticky;
             top: 60px;
             z-index: 99;
+            overflow-x: auto;
         }
         
         .tab {
             flex: 1;
-            padding: 15px;
+            min-width: 80px;
+            padding: 12px 8px;
             text-align: center;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             color: #636e72;
             border: none;
@@ -61,198 +56,45 @@
             transition: all 0.2s;
         }
         
-        .tab.active {
-            color: #2d3436;
-            border-bottom-color: #2d3436;
-        }
+        .tab.active { color: #2d3436; border-bottom-color: #2d3436; }
         
-        .tab-content {
-            display: none;
-            padding: 20px;
-        }
+        .tab-content { display: none; padding: 20px; }
+        .tab-content.active { display: block; }
         
-        .tab-content.active {
-            display: block;
-        }
-        
-        /* Camera Tab */
-        .camera-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-        }
-        
-        .preview {
-            width: 100%;
-            max-width: 350px;
-            aspect-ratio: 1;
-            background: #e0e0e0;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
-        
-        .preview img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .preview-placeholder {
-            color: #999;
-            font-size: 14px;
-        }
-        
-        .camera-btn {
-            width: 100%;
-            max-width: 350px;
-            padding: 16px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .camera-btn.primary {
-            background: #2d3436;
-            color: white;
-        }
-        
-        .camera-btn.primary:disabled {
-            background: #b2bec3;
-        }
-        
-        .camera-btn.secondary {
-            background: white;
-            color: #2d3436;
-            border: 2px solid #2d3436;
-        }
-        
-        input[type="file"] {
-            display: none;
-        }
-        
-        /* Results */
-        .result-card {
+        .card {
             background: white;
             border-radius: 12px;
             padding: 20px;
-            margin-top: 20px;
-            max-width: 350px;
-            width: 100%;
-        }
-        
-        .result-card h3 {
-            font-size: 16px;
             margin-bottom: 15px;
-            color: #2d3436;
         }
         
-        .result-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 14px;
-        }
+        .card h3 { font-size: 16px; margin-bottom: 10px; color: #2d3436; }
+        .card p { color: #636e72; font-size: 14px; line-height: 1.5; }
         
-        .result-row:last-child {
-            border-bottom: none;
-        }
-        
-        .result-label {
-            color: #636e72;
-        }
-        
-        .result-value {
-            color: #2d3436;
-            font-weight: 500;
-            text-align: right;
-            max-width: 60%;
-        }
-        
-        .success-badge {
-            background: #00b894;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            text-align: center;
-            margin-top: 15px;
-            font-weight: 500;
-        }
-        
-        .success-badge a {
-            color: white;
-            text-decoration: underline;
-        }
-        
-        /* Admin Tab */
-        .admin-container {
-            max-width: 500px;
-            margin: 0 auto;
-        }
-        
-        .admin-card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .admin-card h3 {
-            font-size: 18px;
-            margin-bottom: 10px;
-            color: #2d3436;
-        }
-        
-        .admin-card p {
-            color: #636e72;
-            font-size: 14px;
-            margin-bottom: 20px;
-            line-height: 1.5;
-        }
-        
-        .sync-btn {
+        .btn {
             width: 100%;
-            padding: 16px;
-            font-size: 16px;
+            padding: 14px;
+            font-size: 15px;
             font-weight: 600;
             border: none;
-            border-radius: 12px;
+            border-radius: 10px;
             cursor: pointer;
             transition: all 0.2s;
-            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
-            color: white;
+            margin-top: 15px;
         }
         
-        .sync-btn:disabled {
-            background: #b2bec3;
-            cursor: not-allowed;
-        }
+        .btn-primary { background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); color: white; }
+        .btn-success { background: linear-gradient(135deg, #00b894 0%, #55efc4 100%); color: white; }
+        .btn-warning { background: linear-gradient(135deg, #fdcb6e 0%, #ffeaa7 100%); color: #2d3436; }
+        .btn-dark { background: #2d3436; color: white; }
+        .btn:disabled { background: #b2bec3; cursor: not-allowed; }
+        .btn:active:not(:disabled) { transform: scale(0.98); }
         
-        .sync-btn:active:not(:disabled) {
-            transform: scale(0.98);
-        }
-        
-        .sync-results {
-            margin-top: 20px;
-            display: none;
-        }
-        
-        .sync-results.show {
-            display: block;
-        }
-        
-        .sync-stats {
+        .stats {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 10px;
-            margin-bottom: 15px;
+            margin: 15px 0;
         }
         
         .stat-box {
@@ -262,87 +104,150 @@
             text-align: center;
         }
         
-        .stat-number {
-            font-size: 28px;
-            font-weight: 700;
-            color: #2d3436;
+        .stat-number { font-size: 24px; font-weight: 700; color: #6c5ce7; }
+        .stat-label { font-size: 11px; color: #636e72; margin-top: 5px; }
+        
+        .loading { display: none; text-align: center; padding: 30px; }
+        .loading.show { display: block; }
+        
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #f0f0f0;
+            border-top-color: #6c5ce7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
         }
         
-        .stat-label {
-            font-size: 12px;
-            color: #636e72;
-            margin-top: 5px;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
-        .stat-box.created .stat-number { color: #00b894; }
-        .stat-box.updated .stat-number { color: #0984e3; }
-        .stat-box.deactivated .stat-number { color: #e17055; }
-        .stat-box.livraisons .stat-number { color: #6c5ce7; }
-        
-        .sync-details {
+        .details {
             background: #f8f9fa;
             border-radius: 8px;
             padding: 15px;
-            max-height: 300px;
+            max-height: 250px;
             overflow-y: auto;
+            margin-top: 15px;
         }
         
-        .sync-details h4 {
-            font-size: 14px;
-            margin-bottom: 10px;
-            color: #2d3436;
-        }
+        .details h4 { font-size: 13px; margin-bottom: 10px; color: #2d3436; }
+        .detail-item { font-size: 12px; padding: 5px 0; border-bottom: 1px solid #e9ecef; color: #636e72; }
+        .detail-item:last-child { border-bottom: none; }
         
-        .sync-detail-item {
-            font-size: 13px;
-            padding: 6px 0;
-            border-bottom: 1px solid #e9ecef;
-            color: #636e72;
-        }
-        
-        .sync-detail-item:last-child {
-            border-bottom: none;
-        }
-        
-        .sync-error {
+        .error {
             background: #ffe6e6;
             border: 1px solid #e17055;
             color: #d63031;
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
             margin-top: 15px;
-            font-size: 14px;
-        }
-        
-        /* Loading */
-        .loading {
+            font-size: 13px;
             display: none;
+        }
+        
+        .error.show { display: block; }
+        
+        /* Camera */
+        .camera-container { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        
+        .preview {
+            width: 100%;
+            max-width: 300px;
+            aspect-ratio: 1;
+            background: #e0e0e0;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .preview img { width: 100%; height: 100%; object-fit: cover; }
+        .preview-placeholder { color: #999; font-size: 13px; }
+        
+        input[type="file"] { display: none; }
+        
+        .result-card {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            width: 100%;
+            max-width: 300px;
+        }
+        
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        
+        .result-label { color: #636e72; }
+        .result-value { color: #2d3436; font-weight: 500; }
+        
+        .success-badge {
+            background: #00b894;
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
             text-align: center;
-            padding: 40px;
+            margin-top: 10px;
+            font-size: 13px;
         }
         
-        .loading.show {
+        .success-badge a { color: white; }
+        
+        /* Tournées */
+        .tournee-group {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #6c5ce7;
+        }
+        
+        .tournee-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .tournee-title { font-weight: 600; font-size: 14px; }
+        .tournee-date { color: #6c5ce7; font-size: 13px; }
+        .tournee-stats { font-size: 12px; color: #636e72; }
+        
+        .tournee-clients {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+        
+        .client-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        
+        .client-name { color: #2d3436; }
+        .client-info { color: #636e72; }
+        
+        /* Links */
+        .links a {
             display: block;
-        }
-        
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #f0f0f0;
-            border-top-color: #2d3436;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .loading-text {
-            color: #636e72;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            color: #2d3436;
+            text-decoration: none;
+            margin-bottom: 8px;
             font-size: 14px;
         }
+        
+        .links a:hover { background: #e9ecef; }
     </style>
 </head>
 <body>
@@ -351,25 +256,26 @@
     </div>
     
     <div class="tabs">
-        <button class="tab active" data-tab="camera">📷 Bouquet</button>
-        <button class="tab" data-tab="admin">⚙️ Admin</button>
+        <button class="tab active" data-tab="bouquet">📷 Bouquet</button>
+        <button class="tab" data-tab="sync">🔄 Sync</button>
+        <button class="tab" data-tab="tournees">🚚 Tournées</button>
+        <button class="tab" data-tab="liens">🔗 Liens</button>
     </div>
     
-    <!-- Camera Tab -->
-    <div id="camera" class="tab-content active">
+    <!-- Bouquet Tab -->
+    <div id="bouquet" class="tab-content active">
         <div class="camera-container">
             <div class="preview" id="preview">
                 <span class="preview-placeholder">Aucune photo</span>
             </div>
             
             <input type="file" id="fileInput" accept="image/*" capture="environment">
-            <button class="camera-btn primary" id="takePhotoBtn">📷 Prendre une photo</button>
-            
-            <button class="camera-btn secondary" id="analyzeBtn" disabled>✨ Analyser et créer</button>
+            <button class="btn btn-dark" id="takePhotoBtn">📷 Prendre une photo</button>
+            <button class="btn btn-primary" id="analyzeBtn" disabled>✨ Analyser et créer</button>
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <div class="loading-text">Analyse en cours...</div>
+                <div>Analyse en cours...</div>
             </div>
             
             <div class="result-card" id="resultCard" style="display: none;">
@@ -380,57 +286,105 @@
         </div>
     </div>
     
-    <!-- Admin Tab -->
-    <div id="admin" class="tab-content">
-        <div class="admin-container">
-            <div class="admin-card">
-                <h3>🔄 Synchronisation</h3>
-                <p>
-                    Synchronise les données de "Suivi Facturation" vers la base opérationnelle.
-                    Les nouveaux clients seront créés et les livraisons seront ajoutées.
-                </p>
-                <button class="sync-btn" id="syncBtn">🔄 Synchroniser maintenant</button>
-                
-                <div class="loading" id="syncLoading">
-                    <div class="spinner"></div>
-                    <div class="loading-text">Synchronisation en cours...</div>
-                </div>
-                
-                <div class="sync-results" id="syncResults">
-                    <div class="sync-stats">
-                        <div class="stat-box created">
-                            <div class="stat-number" id="statCreated">0</div>
-                            <div class="stat-label">Clients créés</div>
-                        </div>
-                        <div class="stat-box updated">
-                            <div class="stat-number" id="statUpdated">0</div>
-                            <div class="stat-label">Clients mis à jour</div>
-                        </div>
-                        <div class="stat-box deactivated">
-                            <div class="stat-number" id="statDeactivated">0</div>
-                            <div class="stat-label">Clients désactivés</div>
-                        </div>
-                        <div class="stat-box livraisons">
-                            <div class="stat-number" id="statLivraisons">0</div>
-                            <div class="stat-label">Livraisons créées</div>
-                        </div>
-                    </div>
-                    <div class="sync-details" id="syncDetails">
-                        <h4>Détails</h4>
-                        <div id="syncDetailsList"></div>
-                    </div>
-                </div>
-                
-                <div class="sync-error" id="syncError" style="display: none;"></div>
+    <!-- Sync Tab -->
+    <div id="sync" class="tab-content">
+        <div class="card">
+            <h3>🔄 Synchronisation complète</h3>
+            <p>Synchronise Pennylane → Suivi Facturation → Base Clients</p>
+            <button class="btn btn-primary" id="syncAllBtn">Tout synchroniser</button>
+            
+            <div class="loading" id="syncLoading">
+                <div class="spinner"></div>
+                <div>Synchronisation en cours...</div>
             </div>
             
-            <div class="admin-card">
-                <h3>📊 Liens rapides</h3>
-                <p>
-                    <a href="https://airtable.com/app4EHdsU0Z4hr8Bc" target="_blank">📦 Maison Amarante DB</a><br><br>
-                    <a href="https://airtable.com/appxlOtjRVYqbW85l" target="_blank">💰 Suivi Facturation</a><br><br>
-                    <a href="https://app.pennylane.com" target="_blank">📑 Pennylane</a>
-                </p>
+            <div id="syncResults" style="display: none;">
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-number" id="syncCreated">0</div>
+                        <div class="stat-label">Clients créés</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="syncUpdated">0</div>
+                        <div class="stat-label">Mis à jour</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="syncLivraisons">0</div>
+                        <div class="stat-label">Livraisons</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="syncDeactivated">0</div>
+                        <div class="stat-label">Désactivés</div>
+                    </div>
+                </div>
+                <div class="details" id="syncDetails">
+                    <h4>Détails</h4>
+                    <div id="syncDetailsList"></div>
+                </div>
+            </div>
+            
+            <div class="error" id="syncError"></div>
+        </div>
+        
+        <div class="card">
+            <h3>📥 Sync Pennylane uniquement</h3>
+            <p>Importe les nouveaux devis et factures depuis Pennylane</p>
+            <button class="btn btn-warning" id="syncPennylaneBtn">Sync Pennylane</button>
+        </div>
+        
+        <div class="card">
+            <h3>👥 Sync Clients uniquement</h3>
+            <p>Met à jour les clients depuis Suivi Facturation</p>
+            <button class="btn btn-success" id="syncClientsBtn">Sync Clients</button>
+        </div>
+    </div>
+    
+    <!-- Tournées Tab -->
+    <div id="tournees" class="tab-content">
+        <div class="card">
+            <h3>🚚 Préparer les tournées</h3>
+            <p>Génère les suggestions de tournées optimisées par zone et persona</p>
+            <button class="btn btn-primary" id="prepareTourneesBtn">Préparer les tournées</button>
+            
+            <div class="loading" id="tourneesLoading">
+                <div class="spinner"></div>
+                <div>Calcul en cours...</div>
+            </div>
+            
+            <div id="tourneesResults" style="display: none;">
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-number" id="totalClients">0</div>
+                        <div class="stat-label">Clients à livrer</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="totalBouquets">0</div>
+                        <div class="stat-label">Bouquets</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="error" id="tourneesError"></div>
+        </div>
+        
+        <div id="tourneesList"></div>
+    </div>
+    
+    <!-- Liens Tab -->
+    <div id="liens" class="tab-content">
+        <div class="card">
+            <h3>📊 Bases de données</h3>
+            <div class="links">
+                <a href="https://airtable.com/app4EHdsU0Z4hr8Bc" target="_blank">📦 Maison Amarante DB</a>
+                <a href="https://airtable.com/appxlOtjRVYqbW85l" target="_blank">💰 Suivi Facturation</a>
+                <a href="https://app.pennylane.com" target="_blank">📑 Pennylane</a>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>⚙️ API</h3>
+            <div class="links">
+                <a href="/api/health" target="_blank">🔍 Status API</a>
             </div>
         </div>
     </div>
@@ -446,15 +400,7 @@
             });
         });
         
-        // Check URL for admin
-        if (window.location.pathname === '/admin') {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector('[data-tab="admin"]').classList.add('active');
-            document.getElementById('admin').classList.add('active');
-        }
-        
-        // Camera functionality
+        // Camera
         const fileInput = document.getElementById('fileInput');
         const takePhotoBtn = document.getElementById('takePhotoBtn');
         const analyzeBtn = document.getElementById('analyzeBtn');
@@ -464,15 +410,12 @@
         
         let currentImageBase64 = null;
         
-        takePhotoBtn.addEventListener('click', () => {
-            fileInput.click();
-        });
+        takePhotoBtn.addEventListener('click', () => fileInput.click());
         
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             
-            // Compress and convert image
             const base64 = await compressImage(file);
             currentImageBase64 = base64;
             
@@ -488,31 +431,22 @@
                 const img = new Image();
                 
                 img.onload = () => {
-                    // Max 1200px
                     const maxSize = 1200;
                     let width = img.width;
                     let height = img.height;
                     
-                    if (width > height) {
-                        if (width > maxSize) {
-                            height *= maxSize / width;
-                            width = maxSize;
-                        }
-                    } else {
-                        if (height > maxSize) {
-                            width *= maxSize / height;
-                            height = maxSize;
-                        }
+                    if (width > height && width > maxSize) {
+                        height *= maxSize / width;
+                        width = maxSize;
+                    } else if (height > maxSize) {
+                        width *= maxSize / height;
+                        height = maxSize;
                     }
                     
                     canvas.width = width;
                     canvas.height = height;
                     ctx.drawImage(img, 0, 0, width, height);
-                    
-                    // Convert to JPEG base64
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                    const base64 = dataUrl.split(',')[1];
-                    resolve(base64);
+                    resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
                 };
                 
                 img.src = URL.createObjectURL(file);
@@ -530,10 +464,7 @@
                 const response = await fetch('/analyze-and-create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        image_base64: currentImageBase64,
-                        media_type: 'image/jpeg'
-                    })
+                    body: JSON.stringify({ image_base64: currentImageBase64, media_type: 'image/jpeg' })
                 });
                 
                 const data = await response.json();
@@ -543,7 +474,6 @@
                     return;
                 }
                 
-                // Show results
                 const analysis = data.analysis;
                 const created = data.created;
                 
@@ -551,89 +481,135 @@
                 if (analysis.style) html += `<div class="result-row"><span class="result-label">Style</span><span class="result-value">${analysis.style}</span></div>`;
                 if (analysis.taille_suggeree) html += `<div class="result-row"><span class="result-label">Taille</span><span class="result-value">${analysis.taille_suggeree}</span></div>`;
                 if (analysis.couleurs?.length) html += `<div class="result-row"><span class="result-label">Couleurs</span><span class="result-value">${analysis.couleurs.join(', ')}</span></div>`;
-                if (analysis.fleurs?.length) html += `<div class="result-row"><span class="result-label">Fleurs</span><span class="result-value">${analysis.fleurs.join(', ')}</span></div>`;
-                if (analysis.feuillages?.length) html += `<div class="result-row"><span class="result-label">Feuillages</span><span class="result-value">${analysis.feuillages.join(', ')}</span></div>`;
                 
                 document.getElementById('resultContent').innerHTML = html;
-                document.getElementById('successBadge').innerHTML = `
-                    <strong>${created.bouquet_id}</strong><br>
-                    <a href="${created.public_url}" target="_blank">Voir la fiche →</a>
-                `;
+                document.getElementById('successBadge').innerHTML = `<strong>${created.bouquet_id}</strong><br><a href="${created.public_url}" target="_blank">Voir la fiche →</a>`;
                 
                 resultCard.style.display = 'block';
-                
-                // Reset for next photo
                 currentImageBase64 = null;
                 preview.innerHTML = '<span class="preview-placeholder">Aucune photo</span>';
                 
             } catch (err) {
-                alert('Erreur réseau: ' + err.message);
+                alert('Erreur: ' + err.message);
             } finally {
                 loading.classList.remove('show');
                 analyzeBtn.disabled = true;
             }
         });
         
-        // Sync functionality
-        const syncBtn = document.getElementById('syncBtn');
+        // Sync
+        const syncAllBtn = document.getElementById('syncAllBtn');
+        const syncPennylaneBtn = document.getElementById('syncPennylaneBtn');
+        const syncClientsBtn = document.getElementById('syncClientsBtn');
         const syncLoading = document.getElementById('syncLoading');
         const syncResults = document.getElementById('syncResults');
         const syncError = document.getElementById('syncError');
         
-        syncBtn.addEventListener('click', async () => {
-            syncBtn.disabled = true;
+        async function doSync(endpoint, btn) {
+            btn.disabled = true;
             syncLoading.classList.add('show');
-            syncResults.classList.remove('show');
-            syncError.style.display = 'none';
+            syncResults.style.display = 'none';
+            syncError.classList.remove('show');
             
             try {
-                const response = await fetch('/api/sync', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                
+                const response = await fetch(endpoint, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.error) {
                     syncError.textContent = 'Erreur: ' + data.error;
-                    syncError.style.display = 'block';
+                    syncError.classList.add('show');
                     return;
                 }
                 
-                // Update stats
-                document.getElementById('statCreated').textContent = data.clients_created || 0;
-                document.getElementById('statUpdated').textContent = data.clients_updated || 0;
-                document.getElementById('statDeactivated').textContent = data.clients_deactivated || 0;
-                document.getElementById('statLivraisons').textContent = data.livraisons_created || 0;
+                // Extraire les stats
+                const clients = data.clients || data;
+                document.getElementById('syncCreated').textContent = clients.clients_created || 0;
+                document.getElementById('syncUpdated').textContent = clients.clients_updated || 0;
+                document.getElementById('syncLivraisons').textContent = clients.livraisons_created || 0;
+                document.getElementById('syncDeactivated').textContent = clients.clients_deactivated || 0;
                 
-                // Update details
-                const detailsList = document.getElementById('syncDetailsList');
-                if (data.details?.length) {
-                    detailsList.innerHTML = data.details.map(d => 
-                        `<div class="sync-detail-item">${d}</div>`
-                    ).join('');
-                } else {
-                    detailsList.innerHTML = '<div class="sync-detail-item">Aucune modification</div>';
-                }
+                const details = data.total_details || clients.details || [];
+                document.getElementById('syncDetailsList').innerHTML = details.length 
+                    ? details.map(d => `<div class="detail-item">${d}</div>`).join('')
+                    : '<div class="detail-item">Aucune modification</div>';
                 
-                // Show errors if any
-                if (data.errors?.length) {
-                    syncError.innerHTML = '<strong>Erreurs:</strong><br>' + data.errors.join('<br>');
-                    syncError.style.display = 'block';
-                }
-                
-                syncResults.classList.add('show');
+                syncResults.style.display = 'block';
                 
             } catch (err) {
-                syncError.textContent = 'Erreur réseau: ' + err.message;
-                syncError.style.display = 'block';
+                syncError.textContent = 'Erreur: ' + err.message;
+                syncError.classList.add('show');
             } finally {
                 syncLoading.classList.remove('show');
-                syncBtn.disabled = false;
+                btn.disabled = false;
+            }
+        }
+        
+        syncAllBtn.addEventListener('click', () => doSync('/api/sync', syncAllBtn));
+        syncPennylaneBtn.addEventListener('click', () => doSync('/api/sync/pennylane', syncPennylaneBtn));
+        syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn));
+        
+        // Tournées
+        const prepareTourneesBtn = document.getElementById('prepareTourneesBtn');
+        const tourneesLoading = document.getElementById('tourneesLoading');
+        const tourneesResults = document.getElementById('tourneesResults');
+        const tourneesList = document.getElementById('tourneesList');
+        const tourneesError = document.getElementById('tourneesError');
+        
+        prepareTourneesBtn.addEventListener('click', async () => {
+            prepareTourneesBtn.disabled = true;
+            tourneesLoading.classList.add('show');
+            tourneesResults.style.display = 'none';
+            tourneesList.innerHTML = '';
+            tourneesError.classList.remove('show');
+            
+            try {
+                const response = await fetch('/api/tournees');
+                const data = await response.json();
+                
+                if (data.error) {
+                    tourneesError.textContent = 'Erreur: ' + data.error;
+                    tourneesError.classList.add('show');
+                    return;
+                }
+                
+                document.getElementById('totalClients').textContent = data.total_clients || 0;
+                document.getElementById('totalBouquets').textContent = data.total_bouquets || 0;
+                tourneesResults.style.display = 'block';
+                
+                // Afficher les groupes
+                const suggestions = data.suggestions || [];
+                if (suggestions.length === 0) {
+                    tourneesList.innerHTML = '<div class="card"><p>Aucune livraison à planifier pour le moment.</p></div>';
+                } else {
+                    tourneesList.innerHTML = suggestions.map(s => `
+                        <div class="tournee-group">
+                            <div class="tournee-header">
+                                <span class="tournee-title">${s.group.replace('_', ' - ')}</span>
+                                <span class="tournee-date">📅 ${s.date}</span>
+                            </div>
+                            <div class="tournee-stats">${s.nb_clients} clients · ${s.nb_bouquets} bouquets</div>
+                            <div class="tournee-clients">
+                                ${s.clients.map(c => `
+                                    <div class="client-item">
+                                        <span class="client-name">${c.nom}</span>
+                                        <span class="client-info">${c.nb_bouquets} bouquet(s)</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+            } catch (err) {
+                tourneesError.textContent = 'Erreur: ' + err.message;
+                tourneesError.classList.add('show');
+            } finally {
+                tourneesLoading.classList.remove('show');
+                prepareTourneesBtn.disabled = false;
             }
         });
         
-        // Register service worker
+        // Service Worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js');
         }
