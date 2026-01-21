@@ -70,7 +70,7 @@ def pennylane_get_customers():
             break
         
         data = response.json()
-        customers = data.get("customers", [])
+        customers = data.get("items", [])
         all_customers.extend(customers)
         
         if len(customers) < 100:
@@ -96,7 +96,7 @@ def pennylane_get_quotes():
             break
         
         data = response.json()
-        quotes = data.get("quotes", [])
+        quotes = data.get("items", [])
         all_quotes.extend(quotes)
         
         if len(quotes) < 100:
@@ -122,7 +122,7 @@ def pennylane_get_invoices():
             break
         
         data = response.json()
-        invoices = data.get("invoices", data.get("customer_invoices", []))
+        invoices = data.get("items", [])
         all_invoices.extend(invoices)
         
         if len(invoices) < 100:
