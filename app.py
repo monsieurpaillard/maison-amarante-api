@@ -108,10 +108,13 @@ def pennylane_get_quotes():
     headers = get_pennylane_headers()
     
     all_quotes = []
-    page = 1
+    cursor = None
     
     while True:
-        response = req.get(url, headers=headers, params={"page": page, "per_page": 100})
+        params = {"per_page": 100}
+        if cursor:
+            params["cursor"] = cursor
+        response = req.get(url, headers=headers, params=params)
         if response.status_code != 200:
             print(f"[PENNYLANE] Error fetching quotes: {response.text}")
             break
@@ -120,9 +123,9 @@ def pennylane_get_quotes():
         quotes = data.get("items", [])
         all_quotes.extend(quotes)
         
-        if len(quotes) < 100:
+        if not data.get("has_more"):
             break
-        page += 1
+        cursor = data.get("next_cursor")
     
     print(f"[PENNYLANE] Fetched {len(all_quotes)} quotes")
     return all_quotes
@@ -134,10 +137,13 @@ def pennylane_get_invoices():
     headers = get_pennylane_headers()
     
     all_invoices = []
-    page = 1
+    cursor = None
     
     while True:
-        response = req.get(url, headers=headers, params={"page": page, "per_page": 100})
+        params = {"per_page": 100}
+        if cursor:
+            params["cursor"] = cursor
+        response = req.get(url, headers=headers, params=params)
         if response.status_code != 200:
             print(f"[PENNYLANE] Error fetching invoices: {response.text}")
             break
@@ -146,9 +152,9 @@ def pennylane_get_invoices():
         invoices = data.get("items", [])
         all_invoices.extend(invoices)
         
-        if len(invoices) < 100:
+        if not data.get("has_more"):
             break
-        page += 1
+        cursor = data.get("next_cursor")
     
     print(f"[PENNYLANE] Fetched {len(all_invoices)} invoices")
     return all_invoices
