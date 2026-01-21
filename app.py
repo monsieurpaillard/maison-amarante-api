@@ -32,7 +32,7 @@ AIRTABLE_CLIENTS_TABLE = os.environ.get("AIRTABLE_CLIENTS_TABLE", "tblOJnWeVjfkA
 AIRTABLE_LIVRAISONS_TABLE = os.environ.get("AIRTABLE_LIVRAISONS_TABLE", "tbltyDn0VUIbasYtx")
 
 # Suivi Facturation (pipe commercial)
-SUIVI_BASE_ID = "appxlOtjRVYqbW85I"
+SUIVI_BASE_ID = "appxlOtjRVYqbW85l"
 SUIVI_TABLE_ID = "tblkYF6GxgsrdgBRc"
 
 # Pennylane API base URL
