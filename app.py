@@ -38,17 +38,24 @@ SUIVI_TABLE_ID = "tblkYF6GxgsrdgBRc"
 # Pennylane API base URL
 PENNYLANE_API_URL = "https://app.pennylane.com/api/external/v2"
 
-def extract_customer_name_from_label(label):
-    """Extrait le nom du client depuis le label Pennylane"""
-    if not label:
-        return "Client inconnu"
-    # Format: "Facture NOM CLIENT - F-2026-xxx (label généré)"
-    if " - " in label:
+def extract_customer_name_from_label(label, filename=None):
+    """Extrait le nom du client depuis le label ou filename Pennylane"""
+    # Try label first (factures): "Facture NOM CLIENT - F-2026-xxx (label généré)"
+    if label and " - " in label:
         name = label.split(" - ")[0]
         for prefix in ["Facture ", "Devis ", "Avoir "]:
             if name.startswith(prefix):
                 name = name[len(prefix):]
-        return name.strip() or "Client inconnu"
+        if name.strip() and name.strip() != label:
+            return name.strip()
+    
+    # Try filename (devis): "Devis-NOM CLIENT-MAISON AMARANTE-D-2026-xxx.pdf"
+    if filename and "-" in filename:
+        parts = filename.replace(".pdf", "").split("-")
+        if len(parts) >= 3:
+            # parts[0] = "Devis", parts[1] = nom client, etc
+            return parts[1].strip() or "Client inconnu"
+    
     return "Client inconnu"
 
 
@@ -545,7 +552,7 @@ def sync_pennylane_to_suivi():
     for quote in quotes:
         quote_id = str(quote.get("id", ""))
         if quote_id and quote_id not in existing_by_pennylane_id:
-            customer_name = extract_customer_name_from_label(quote.get("label", ""))
+            customer_name = extract_customer_name_from_label(quote.get("label", ""), quote.get("filename", ""))
             amount = quote.get("amount", 0)
             
             card_fields = {
@@ -566,7 +573,7 @@ def sync_pennylane_to_suivi():
     for invoice in invoices:
         invoice_id = str(invoice.get("id", ""))
         if invoice_id and invoice_id not in existing_by_pennylane_id:
-            customer_name = extract_customer_name_from_label(invoice.get("label", ""))
+            customer_name = extract_customer_name_from_label(invoice.get("label", ""), invoice.get("filename", ""))
             amount = invoice.get("amount", invoice.get("currency_amount", 0))
             
             card_fields = {
@@ -587,7 +594,7 @@ def sync_pennylane_to_suivi():
     for sub in subscriptions:
         sub_id = str(sub.get("id", ""))
         if sub_id and sub_id not in existing_by_pennylane_id:
-            customer_name = extract_customer_name_from_label(sub.get("label", ""))
+            customer_name = extract_customer_name_from_label(sub.get("label", ""), sub.get("filename", ""))
             
             card_fields = {
                 "Nom du Client": customer_name,
