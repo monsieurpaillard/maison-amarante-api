@@ -1630,11 +1630,18 @@ def api_parse_clients():
                 if result["success"]:
                     updated += 1
 
+        # Debug info
+        parsed_names = [k for k in parsed_data.keys() if not k.startswith("_")]
+        records_found = {name: name in client_records for name in parsed_names}
+
         return jsonify({
             "total_clients": total_clients,
             "batch_size": len(clients_to_parse),
             "offset": offset,
-            "parsed": len([k for k in parsed_data.keys() if not k.startswith("_")]),
+            "parsed": len(parsed_names),
+            "parsed_names": parsed_names[:5],
+            "records_found": records_found,
+            "client_records_sample": list(client_records.keys())[:5],
             "updated": updated,
             "next_offset": offset + limit if offset + limit < total_clients else None
         })
