@@ -551,8 +551,8 @@
                     document.getElementById('syncLabel2').textContent = 'Mis à jour';
                     document.getElementById('syncStat3').textContent = clients.livraisons_created || 0;
                     document.getElementById('syncLabel3').textContent = 'Livraisons';
-                    document.getElementById('syncStat4').textContent = clients.clients_deactivated || 0;
-                    document.getElementById('syncLabel4').textContent = 'Désactivés';
+                    document.getElementById('syncStat4').textContent = clients.notes_parsed || 0;
+                    document.getElementById('syncLabel4').textContent = '🤖 Notes IA';
                 }
                 
                 const details = data.total_details || data.details || (data.clients && data.clients.details) || [];

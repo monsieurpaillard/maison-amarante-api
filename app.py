@@ -468,41 +468,67 @@ def update_livraison(record_id: str, fields: dict) -> dict:
 
 # ==================== CLAUDE HELPERS ====================
 
-def parse_client_notes_with_claude(client_name: str, notes: str) -> dict:
-    """Parse les notes libres d'un client pour extraire les préférences"""
-    if not notes or notes.strip() == "":
+def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
+    """Parse les notes de TOUS les clients en un seul appel Claude (batch processing)
+
+    Args:
+        clients_data: liste de {"name": "...", "notes": "..."}
+
+    Returns:
+        dict avec client_name comme clé et infos parsées comme valeur
+    """
+    if not clients_data:
         return {}
-    
-    prompt = f"""Analyse ces notes sur le client "{client_name}" et extrais les informations structurées.
 
-Notes:
-{notes}
+    # Filtrer les clients sans notes
+    clients_with_notes = [c for c in clients_data if c.get("notes", "").strip()]
+    if not clients_with_notes:
+        return {}
 
-Réponds UNIQUEMENT en JSON valide avec les champs trouvés (omets les champs non mentionnés):
+    # Construire la liste des clients à parser
+    clients_text = "\n\n".join([
+        f"### {c['name']}\n{c['notes']}"
+        for c in clients_with_notes
+    ])
+
+    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients et extrais les informations structurées pour chacun.
+
+{clients_text}
+
+---
+
+Réponds UNIQUEMENT en JSON valide. Le format doit être un objet avec le nom du client comme clé:
 
 {{
-    "persona": "type de client",
-    "frequence": "fréquence de livraison",
-    "nb_bouquets": nombre,
-    "pref_couleurs": ["couleur1", "couleur2"],
-    "pref_style": ["style1"],
-    "tailles_demandees": ["taille1"],
-    "creneau_prefere": "jour ou moment préféré",
-    "adresse": "adresse si mentionnée",
-    "email": "email si mentionné",
-    "telephone": "téléphone si mentionné",
-    "instructions_speciales": "autres instructions importantes"
+    "NOM CLIENT 1": {{
+        "persona": "type",
+        "frequence": "fréquence",
+        "nb_bouquets": nombre,
+        "tailles": ["S", "M", "L" ou "XL"],
+        "pref_couleurs": ["couleur1"],
+        "pref_style": "style",
+        "creneau_prefere": "jour/moment",
+        "adresse": "adresse complète",
+        "instructions_speciales": "autres infos"
+    }},
+    "NOM CLIENT 2": {{ ... }}
 }}
 
 Valeurs possibles:
-- persona: {PERSONAS_VALIDES}
-- frequence: {FREQUENCES_VALIDES}
-- pref_couleurs: {COULEURS_VALIDES}
-- pref_style: {STYLES_VALIDES}
-- tailles_demandees: {TAILLES_VALIDES}
-- creneau_prefere: {CRENEAUX_VALIDES}
+- persona: Coiffeur, Bureau, Hôtel, Restaurant, Retail, Spa, Galerie, Clinique, Autre
+- frequence: Hebdomadaire, Bimensuel, Mensuel, Ponctuel
+- tailles: S (petit), M (moyen), L (grand), XL (très grand)
+- pref_couleurs: Rouge, Blanc, Rose, Vert, Jaune, Orange, Violet, Bleu, Noir, Neutre, Pastel
+- pref_style: Classique, Moderne, Zen, Champêtre, Luxe, Coloré, Créatif
+- creneau_prefere: Lundi, Mardi, Mercredi, Jeudi, Vendredi, Matin, Après-midi, ou horaire spécifique
 
-Important: Ne devine pas, extrais uniquement ce qui est explicitement mentionné."""
+Important:
+- Extrais UNIQUEMENT ce qui est explicitement mentionné
+- Pour nb_bouquets, compte le total mentionné
+- Pour l'adresse, inclus rue + code postal + ville
+- Déduis le persona du type d'établissement (Salon coiffure → Coiffeur, Hôtel → Hôtel, etc.)"""
+
+    print(f"[PARSE] Parsing {len(clients_with_notes)} clients en batch...")
 
     response = req.post(
         "https://api.anthropic.com/v1/messages",
@@ -512,24 +538,33 @@ Important: Ne devine pas, extrais uniquement ce qui est explicitement mentionné
             "content-type": "application/json"
         },
         json={
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 1024,
+            "model": "claude-haiku-4-20250514",
+            "max_tokens": 8000,
             "messages": [{"role": "user", "content": prompt}]
-        }
+        },
+        timeout=60
     )
-    
+
     if response.status_code != 200:
         print(f"[PARSE] Error: {response.text}")
         return {}
-    
+
     text = response.json()["content"][0]["text"].strip()
-    if text.startswith("```"):
-        text = text.split("```")[1].replace("json", "").strip()
-    
+
+    # Nettoyer le JSON si wrapped dans des backticks
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        print(f"[PARSE] Successfully parsed {len(parsed)} clients")
+        return parsed
     except Exception as e:
         print(f"[PARSE] JSON parse failed: {e}")
+        print(f"[PARSE] Raw response: {text[:500]}...")
         return {}
 
 
@@ -624,79 +659,117 @@ def sync_suivi_to_clients():
         "clients_updated": 0,
         "clients_deactivated": 0,
         "livraisons_created": 0,
+        "notes_parsed": 0,
         "errors": [],
         "details": []
     }
-    
+
     cards = get_suivi_cards()
     clients_by_name, clients_by_pennylane, _ = get_existing_clients()
-    
+
     active_statuts = ["Factures", "Abonnements", "Essai gratuit", "À livrer"]
     inactive_statuts = ["Archives", "Abonnement arrêté", "Avoirs"]
-    
+
+    # 1. Collecter tous les clients actifs avec leurs notes pour le batch parsing
+    clients_to_parse = []
+    active_cards = []
+
     for card in cards:
         fields = card.get("fields", {})
         client_name = fields.get("Nom du Client", "").strip()
         statut = fields.get("Statut", "")
         notes = fields.get("Notes", "")
         pennylane_id = str(fields.get("ID Pennylane", ""))
-        
+
         if not client_name:
             continue
-        
-        existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
-        
+
         if statut in active_statuts:
-            parsed = {}  # Disabled for performance
-            
-            client_fields = {
-                "Nom": client_name,
-                "Actif": True
-            }
-            
-            if pennylane_id:
-                client_fields["ID_Pennylane"] = pennylane_id
-            
-            # Ajouter les infos parsées
-            if parsed.get("persona"):
-                client_fields["Persona"] = parsed["persona"]
-            if parsed.get("frequence"):
-                client_fields["Fréquence"] = parsed["frequence"]
-            if parsed.get("nb_bouquets"):
-                client_fields["Nb_Bouquets"] = parsed["nb_bouquets"]
-            if parsed.get("pref_couleurs"):
-                client_fields["Pref_Couleurs"] = parsed["pref_couleurs"]
-            if parsed.get("pref_style"):
-                client_fields["Pref_Style"] = parsed["pref_style"]
-            if parsed.get("tailles_demandees"):
-                client_fields["Tailles_Demandées"] = parsed["tailles_demandees"]
-            if parsed.get("creneau_prefere"):
-                client_fields["Créneau_Préféré"] = parsed["creneau_prefere"]
-            if parsed.get("adresse"):
-                client_fields["Adresse"] = parsed["adresse"]
-            if parsed.get("instructions_speciales"):
-                client_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
-            
-            if existing_client:
-                record_id = existing_client["id"]
-                result = update_client(record_id, client_fields)
-                if result["success"]:
-                    results["clients_updated"] += 1
-                    results["details"].append(f"✏️ Client mis à jour: {client_name}")
+            active_cards.append({
+                "card": card,
+                "client_name": client_name,
+                "statut": statut,
+                "notes": notes,
+                "pennylane_id": pennylane_id
+            })
+            if notes.strip():
+                clients_to_parse.append({"name": client_name, "notes": notes})
+
+    # 2. Batch parsing avec Claude (1 seul appel pour tous les clients)
+    parsed_data = {}
+    if clients_to_parse:
+        results["details"].append(f"🤖 Parsing IA de {len(clients_to_parse)} notes...")
+        parsed_data = parse_all_clients_notes_with_claude(clients_to_parse)
+        results["notes_parsed"] = len(parsed_data)
+
+    # 3. Traiter chaque client avec les infos parsées
+    for card_info in active_cards:
+        client_name = card_info["client_name"]
+        statut = card_info["statut"]
+        pennylane_id = card_info["pennylane_id"]
+
+        existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
+
+        # Récupérer les infos parsées pour ce client
+        parsed = parsed_data.get(client_name, {})
+
+        client_fields = {
+            "Nom": client_name,
+            "Actif": True
+        }
+
+        if pennylane_id:
+            client_fields["ID_Pennylane"] = pennylane_id
+
+        # Ajouter les infos parsées par Claude
+        if parsed.get("persona"):
+            client_fields["Persona"] = parsed["persona"]
+        if parsed.get("frequence"):
+            client_fields["Fréquence"] = parsed["frequence"]
+        if parsed.get("nb_bouquets"):
+            client_fields["Nb_Bouquets"] = parsed["nb_bouquets"]
+        if parsed.get("pref_couleurs"):
+            # Peut être une liste ou une string
+            couleurs = parsed["pref_couleurs"]
+            if isinstance(couleurs, list):
+                client_fields["Pref_Couleurs"] = ", ".join(couleurs)
             else:
-                if "Fréquence" not in client_fields:
-                    client_fields["Fréquence"] = "Mensuel"
-                if "Nb_Bouquets" not in client_fields:
-                    client_fields["Nb_Bouquets"] = 1
-                
-                result = create_client(client_fields)
-                if result["success"]:
-                    results["clients_created"] += 1
-                    results["details"].append(f"✅ Client créé: {client_name}")
-                    record_id = result["record"]["id"]
-                else:
-                    results["errors"].append(f"Erreur création {client_name}")
-                    continue
+                client_fields["Pref_Couleurs"] = couleurs
+        if parsed.get("pref_style"):
+            client_fields["Pref_Style"] = parsed["pref_style"]
+        if parsed.get("tailles"):
+            tailles = parsed["tailles"]
+            if isinstance(tailles, list):
+                client_fields["Tailles_Demandées"] = ", ".join(tailles)
+            else:
+                client_fields["Tailles_Demandées"] = tailles
+        if parsed.get("creneau_prefere"):
+            client_fields["Créneau_Préféré"] = parsed["creneau_prefere"]
+        if parsed.get("adresse"):
+            client_fields["Adresse"] = parsed["adresse"]
+        if parsed.get("instructions_speciales"):
+            client_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
+
+        if existing_client:
+            record_id = existing_client["id"]
+            result = update_client(record_id, client_fields)
+            if result["success"]:
+                results["clients_updated"] += 1
+                results["details"].append(f"✏️ Client mis à jour: {client_name}")
+        else:
+            if "Fréquence" not in client_fields:
+                client_fields["Fréquence"] = "Mensuel"
+            if "Nb_Bouquets" not in client_fields:
+                client_fields["Nb_Bouquets"] = 1
+
+            result = create_client(client_fields)
+            if result["success"]:
+                results["clients_created"] += 1
+                results["details"].append(f"✅ Client créé: {client_name}")
+                record_id = result["record"]["id"]
+            else:
+                results["errors"].append(f"Erreur création {client_name}")
+                continue
             
             # Créer une livraison si statut "À livrer" ou "Essai gratuit"
             if statut in ["À livrer", "Essai gratuit"]:
