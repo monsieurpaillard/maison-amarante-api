@@ -1167,8 +1167,8 @@ def api_test_fake_pennylane():
 
     fake_data = {
         "quotes": [
-            {"id": "FAKE-Q001", "label": "", "filename": "Devis FAKE Librairie Voltaire.pdf", "amount": 180},
-            {"id": "FAKE-Q002", "label": "", "filename": "Devis FAKE Restaurant Le Jardin.pdf", "amount": 320},
+            {"id": "FAKE-Q001", "label": "", "filename": "Devis-FAKE Librairie Voltaire-MAISON AMARANTE-D-2026-001.pdf", "amount": 180},
+            {"id": "FAKE-Q002", "label": "", "filename": "Devis-FAKE Restaurant Le Jardin-MAISON AMARANTE-D-2026-002.pdf", "amount": 320},
         ],
         "invoices": [
             {"id": "FAKE-F001", "label": "Facture FAKE Spa Sérénité - F-2026-001", "amount": 250},
@@ -1176,8 +1176,8 @@ def api_test_fake_pennylane():
             {"id": "FAKE-F003", "label": "Facture FAKE Clinique Beauté - F-2026-003", "amount": 175},
         ],
         "subscriptions": [
-            {"id": "FAKE-A001", "label": "", "filename": "FAKE Hôtel Le Marais - Abonnement.pdf"},
-            {"id": "FAKE-A002", "label": "", "filename": "FAKE Boutique Mode Paris - Abonnement.pdf"},
+            {"id": "FAKE-A001", "label": "", "filename": "Devis-FAKE Hôtel Le Marais-MAISON AMARANTE-A-2026-001.pdf"},
+            {"id": "FAKE-A002", "label": "", "filename": "Devis-FAKE Boutique Mode Paris-MAISON AMARANTE-A-2026-002.pdf"},
         ]
     }
 
