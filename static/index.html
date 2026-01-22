@@ -554,8 +554,8 @@
                     document.getElementById('syncLabel4').textContent = 'Désactivés';
                 }
                 
-                const details = data.total_details || clients.details || [];
-                document.getElementById('syncDetailsList').innerHTML = details.length 
+                const details = data.total_details || data.details || (data.clients && data.clients.details) || [];
+                document.getElementById('syncDetailsList').innerHTML = details.length
                     ? details.map(d => `<div class="detail-item">${d}</div>`).join('')
                     : '<div class="detail-item">Aucune modification</div>';
                 
