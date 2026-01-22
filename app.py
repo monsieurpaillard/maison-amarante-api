@@ -538,7 +538,7 @@ Important:
             "content-type": "application/json"
         },
         json={
-            "model": "claude-haiku-4-20250514",
+            "model": "claude-3-5-haiku-20241022",
             "max_tokens": 8000,
             "messages": [{"role": "user", "content": prompt}]
         },
