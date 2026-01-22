@@ -1160,6 +1160,124 @@ def api_test_cleanup():
     return jsonify({"deleted": deleted})
 
 
+@app.route("/api/test/fake-pennylane", methods=["POST"])
+def api_test_fake_pennylane():
+    """Simule une sync Pennylane avec des données fake (sans toucher au vrai Pennylane)"""
+    import random
+
+    fake_data = {
+        "quotes": [
+            {"id": "FAKE-Q001", "label": "", "filename": "Devis FAKE Librairie Voltaire.pdf", "amount": 180},
+            {"id": "FAKE-Q002", "label": "", "filename": "Devis FAKE Restaurant Le Jardin.pdf", "amount": 320},
+        ],
+        "invoices": [
+            {"id": "FAKE-F001", "label": "Facture FAKE Spa Sérénité - F-2026-001", "amount": 250},
+            {"id": "FAKE-F002", "label": "Facture FAKE Galerie d'Art Moderne - F-2026-002", "amount": 450},
+            {"id": "FAKE-F003", "label": "Facture FAKE Clinique Beauté - F-2026-003", "amount": 175},
+        ],
+        "subscriptions": [
+            {"id": "FAKE-A001", "label": "", "filename": "FAKE Hôtel Le Marais - Abonnement.pdf"},
+            {"id": "FAKE-A002", "label": "", "filename": "FAKE Boutique Mode Paris - Abonnement.pdf"},
+        ]
+    }
+
+    # Notes variées pour tester le parsing
+    fake_notes = {
+        "FAKE Librairie Voltaire": "Devis en attente de validation. Style classique, tons bordeaux. Contact: Pierre 01 42 55 66 77",
+        "FAKE Restaurant Le Jardin": "Devis pour terrasse. 4 bouquets M. Couleurs vives. Pas de lys (allergies clients).",
+        "FAKE Spa Sérénité": "Livraison mercredi uniquement. Bouquets zen, tons blancs et verts. Adresse: 12 rue de la Paix, 75002 Paris",
+        "FAKE Galerie d'Art Moderne": "2 grands bouquets XL par mois. Style contemporain, couleurs neutres. Accès par l'arrière-cour.",
+        "FAKE Clinique Beauté": "3 petits bouquets S. Hypoallergénique obligatoire. Livrer avant 8h. Interphone: 4521",
+        "FAKE Hôtel Le Marais": "Abonnement premium. 5 bouquets/semaine. Mix de styles. Contact: Réception 01 44 55 66 77",
+        "FAKE Boutique Mode Paris": "Abonnement mensuel. Bouquets fashion, roses et pivoines. Fermé le dimanche.",
+    }
+
+    results = {"quotes_synced": 0, "invoices_synced": 0, "subscriptions_synced": 0, "details": [], "errors": []}
+
+    # Check existing cards to avoid duplicates
+    existing_cards = get_suivi_cards()
+    existing_ids = {card.get("fields", {}).get("ID Pennylane", "") for card in existing_cards}
+
+    # Sync fake quotes
+    for quote in fake_data["quotes"]:
+        if quote["id"] in existing_ids:
+            continue
+        customer_name = extract_customer_name_from_label(quote.get("label", ""), quote.get("filename", ""))
+        card_fields = {
+            "Nom du Client": customer_name,
+            "ID Pennylane": quote["id"],
+            "Montant": float(quote["amount"]),
+            "Statut": "Devis",
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": fake_notes.get(customer_name, "")
+        }
+        result = create_suivi_card(card_fields)
+        if result["success"]:
+            results["quotes_synced"] += 1
+            results["details"].append(f"📋 Devis ajouté: {customer_name}")
+        else:
+            results["errors"].append(f"❌ {customer_name}: {result['error']}")
+
+    # Sync fake invoices
+    for invoice in fake_data["invoices"]:
+        if invoice["id"] in existing_ids:
+            continue
+        customer_name = extract_customer_name_from_label(invoice.get("label", ""), invoice.get("filename", ""))
+        card_fields = {
+            "Nom du Client": customer_name,
+            "ID Pennylane": invoice["id"],
+            "Montant": float(invoice["amount"]),
+            "Statut": "Factures",
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": fake_notes.get(customer_name, "")
+        }
+        result = create_suivi_card(card_fields)
+        if result["success"]:
+            results["invoices_synced"] += 1
+            results["details"].append(f"🧾 Facture ajoutée: {customer_name}")
+        else:
+            results["errors"].append(f"❌ {customer_name}: {result['error']}")
+
+    # Sync fake subscriptions
+    for sub in fake_data["subscriptions"]:
+        if sub["id"] in existing_ids:
+            continue
+        customer_name = extract_customer_name_from_label(sub.get("label", ""), sub.get("filename", ""))
+        card_fields = {
+            "Nom du Client": customer_name,
+            "ID Pennylane": sub["id"],
+            "Statut": "Abonnements",
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": fake_notes.get(customer_name, "")
+        }
+        result = create_suivi_card(card_fields)
+        if result["success"]:
+            results["subscriptions_synced"] += 1
+            results["details"].append(f"🔄 Abonnement ajouté: {customer_name}")
+        else:
+            results["errors"].append(f"❌ {customer_name}: {result['error']}")
+
+    return jsonify(results)
+
+
+@app.route("/api/test/cleanup-fake", methods=["POST"])
+def api_test_cleanup_fake():
+    """Supprime les cartes fake Pennylane (ID commençant par FAKE-)"""
+    cards = get_suivi_cards()
+    deleted = 0
+
+    for card in cards:
+        pennylane_id = card.get("fields", {}).get("ID Pennylane", "")
+        if pennylane_id.startswith("FAKE-"):
+            record_id = card["id"]
+            url = f"https://api.airtable.com/v0/{SUIVI_BASE_ID}/{SUIVI_TABLE_ID}/{record_id}"
+            response = req.delete(url, headers=get_airtable_headers())
+            if response.status_code == 200:
+                deleted += 1
+
+    return jsonify({"deleted": deleted})
+
+
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
     """Synchronisation complète Pennylane → Suivi → Clients"""
