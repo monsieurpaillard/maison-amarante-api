@@ -1201,6 +1201,22 @@ def api_test_cleanup():
     return jsonify(results)
 
 
+@app.route("/api/test/parse-debug", methods=["POST"])
+def api_test_parse_debug():
+    """Debug endpoint pour tester le parsing Claude"""
+    test_clients = [
+        {"name": "Test Restaurant", "notes": "Livraison mardi. 2 bouquets M. Adresse: 10 rue de Paris, 75001 Paris"},
+        {"name": "Test Salon", "notes": "Hebdomadaire. Style zen. Couleurs blanc/vert. Adresse: 5 rue du Temple, 75003 Paris"}
+    ]
+
+    result = parse_all_clients_notes_with_claude(test_clients)
+    return jsonify({
+        "input": test_clients,
+        "parsed": result,
+        "count": len(result)
+    })
+
+
 @app.route("/api/test/sync-all", methods=["POST"])
 def api_test_sync_all():
     """Synchronisation complète en mode sandbox (fake Pennylane + vrais clients)"""
