@@ -1643,6 +1643,7 @@ def api_parse_clients():
         records_found = {name: name in client_records for name in parsed_names}
 
         return jsonify({
+            "version": "v2",  # Pour vérifier le déploiement
             "total_clients": total_clients,
             "batch_size": len(clients_to_parse),
             "offset": offset,
