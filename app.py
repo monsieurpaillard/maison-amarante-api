@@ -782,15 +782,23 @@ def sync_suivi_to_clients():
                 if liv_result["success"]:
                     results["livraisons_created"] += 1
                     results["details"].append(f"📦 Livraison créée pour: {client_name}")
-        
-        elif statut in inactive_statuts:
+
+    # 4. Traiter les cartes inactives (désactiver les clients existants)
+    for card in cards:
+        fields = card.get("fields", {})
+        client_name = fields.get("Nom du Client", "").strip()
+        statut = fields.get("Statut", "")
+        pennylane_id = str(fields.get("ID Pennylane", ""))
+
+        if statut in inactive_statuts:
+            existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
             if existing_client:
                 record_id = existing_client["id"]
                 result = update_client(record_id, {"Actif": False})
                 if result["success"]:
                     results["clients_deactivated"] += 1
                     results["details"].append(f"❌ Client désactivé: {client_name}")
-    
+
     return results
 
 
