@@ -289,8 +289,8 @@
     <!-- Sync Tab -->
     <div id="sync" class="tab-content">
         <div class="card">
-            <h3>🔄 Synchronisation complète</h3>
-            <p>Synchronise Pennylane → Suivi Facturation → Base Clients</p>
+            <h3>🧪 Synchronisation complète (SANDBOX)</h3>
+            <p>⚠️ Mode test : Fake Pennylane → Suivi Facturation → Base Clients</p>
             <button class="btn btn-primary" id="syncAllBtn">Tout synchroniser</button>
             
             <div class="loading" id="syncLoading">
@@ -570,7 +570,8 @@
             }
         }
         
-        syncAllBtn.addEventListener('click', () => doSync('/api/sync', syncAllBtn));
+        // TODO: Remettre '/api/sync' quand la sandbox n'est plus nécessaire
+        syncAllBtn.addEventListener('click', () => doSync('/api/test/sync-all', syncAllBtn));
         // TODO: Remettre '/api/sync/pennylane' quand la sandbox n'est plus nécessaire
         syncPennylaneBtn.addEventListener('click', () => doSync('/api/test/fake-pennylane', syncPennylaneBtn));
         syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn));

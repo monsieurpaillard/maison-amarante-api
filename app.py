@@ -1120,6 +1120,29 @@ def api_test_cleanup():
     return jsonify(results)
 
 
+@app.route("/api/test/sync-all", methods=["POST"])
+def api_test_sync_all():
+    """Synchronisation complète en mode sandbox (fake Pennylane + vrais clients)"""
+    results = {
+        "pennylane": {},
+        "clients": {},
+        "total_details": []
+    }
+
+    # 1. Fake Pennylane → Suivi Facturation
+    fake_response = api_test_fake_pennylane()
+    fake_data = fake_response.get_json()
+    results["pennylane"] = fake_data
+    results["total_details"].extend(fake_data.get("details", []))
+
+    # 2. Sync Suivi Facturation → CLIENTS
+    clients_results = sync_suivi_to_clients()
+    results["clients"] = clients_results
+    results["total_details"].extend(clients_results.get("details", []))
+
+    return jsonify(results)
+
+
 @app.route("/api/test/fake-pennylane", methods=["POST"])
 def api_test_fake_pennylane():
     """Simule une sync Pennylane avec des données fake (sans toucher au vrai Pennylane)"""
