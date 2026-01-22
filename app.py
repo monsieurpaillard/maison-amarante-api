@@ -1596,11 +1596,13 @@ def api_parse_clients():
 
         # Mettre à jour les clients
         updated = 0
+        errors = []
         for client_name, parsed in parsed_data.items():
             if client_name.startswith("_"):  # Skip debug keys
                 continue
             record_id = client_records.get(client_name)
             if not record_id:
+                errors.append(f"{client_name}: no record_id")
                 continue
 
             update_fields = {}
@@ -1625,10 +1627,15 @@ def api_parse_clients():
             if parsed.get("instructions_speciales"):
                 update_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
 
-            if update_fields:
-                result = update_client(record_id, update_fields)
-                if result["success"]:
-                    updated += 1
+            if not update_fields:
+                errors.append(f"{client_name}: no fields to update")
+                continue
+
+            result = update_client(record_id, update_fields)
+            if result["success"]:
+                updated += 1
+            else:
+                errors.append(f"{client_name}: {result.get('error', 'unknown')[:100]}")
 
         # Debug info
         parsed_names = [k for k in parsed_data.keys() if not k.startswith("_")]
@@ -1639,10 +1646,8 @@ def api_parse_clients():
             "batch_size": len(clients_to_parse),
             "offset": offset,
             "parsed": len(parsed_names),
-            "parsed_names": parsed_names[:5],
-            "records_found": records_found,
-            "client_records_sample": list(client_records.keys())[:5],
             "updated": updated,
+            "errors": errors[:5] if errors else [],
             "next_offset": offset + limit if offset + limit < total_clients else None
         })
     except Exception as e:
