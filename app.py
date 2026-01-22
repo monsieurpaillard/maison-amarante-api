@@ -935,8 +935,101 @@ def generate_google_maps_url(clients: list, start_address: str = None) -> str:
     return url
 
 
+def get_geographic_zone(code_postal: str) -> str:
+    """Retourne la zone géographique pour grouper les clients."""
+    if not code_postal:
+        return "Autre"
+
+    # Paris par zones
+    if code_postal in ["75001", "75002", "75003", "75004"]:
+        return "Paris Centre"
+    if code_postal in ["75005", "75006", "75007"]:
+        return "Paris Rive Gauche"
+    if code_postal in ["75008", "75009", "75010"]:
+        return "Paris Nord-Ouest"
+    if code_postal in ["75011", "75012", "75013"]:
+        return "Paris Est"
+    if code_postal in ["75014", "75015", "75016"]:
+        return "Paris Sud-Ouest"
+    if code_postal in ["75017", "75018", "75019", "75020"]:
+        return "Paris Nord-Est"
+
+    # Banlieue
+    if code_postal.startswith("92"):
+        return "Hauts-de-Seine (92)"
+    if code_postal.startswith("93"):
+        return "Seine-St-Denis (93)"
+    if code_postal.startswith("94"):
+        return "Val-de-Marne (94)"
+
+    return "Autre"
+
+
+def split_into_tournees(clients: list, max_clients_per_tournee: int = 12) -> list:
+    """Divise les clients en plusieurs tournées réalistes.
+
+    Stratégie:
+    1. Grouper par zone géographique
+    2. Chaque zone devient une tournée si elle a assez de clients
+    3. Les petites zones sont fusionnées avec les zones adjacentes
+    4. Maximum 12-15 clients par tournée (réaliste pour une journée à Paris)
+    """
+    if not clients:
+        return []
+
+    # Grouper par zone géographique
+    zones = defaultdict(list)
+    for client in clients:
+        zone = get_geographic_zone(client.get("code_postal", ""))
+        zones[zone].append(client)
+
+    # Ordre logique des zones (parcours géographique)
+    zone_order = [
+        "Paris Centre",
+        "Paris Rive Gauche",
+        "Paris Nord-Ouest",
+        "Paris Sud-Ouest",
+        "Paris Est",
+        "Paris Nord-Est",
+        "Hauts-de-Seine (92)",
+        "Val-de-Marne (94)",
+        "Seine-St-Denis (93)",
+        "Autre"
+    ]
+
+    # Construire les tournées
+    tournees = []
+    current_tournee = []
+
+    for zone_name in zone_order:
+        zone_clients = zones.get(zone_name, [])
+        if not zone_clients:
+            continue
+
+        # Trier les clients de la zone par code postal
+        zone_clients = sorted(zone_clients, key=lambda c: (c.get("code_postal", ""), c.get("adresse", "")))
+
+        for client in zone_clients:
+            current_tournee.append(client)
+
+            # Si on atteint le max, créer une nouvelle tournée
+            if len(current_tournee) >= max_clients_per_tournee:
+                tournees.append(current_tournee)
+                current_tournee = []
+
+    # Ajouter la dernière tournée si elle n'est pas vide
+    if current_tournee:
+        # Si elle est trop petite et qu'on a d'autres tournées, fusionner avec la précédente si possible
+        if len(current_tournee) < 5 and tournees and len(tournees[-1]) + len(current_tournee) <= max_clients_per_tournee + 3:
+            tournees[-1].extend(current_tournee)
+        else:
+            tournees.append(current_tournee)
+
+    return tournees
+
+
 def prepare_tournees():
-    """Prépare UNE tournée optimisée avec tous les clients actifs."""
+    """Prépare PLUSIEURS tournées optimisées, réparties sur différents jours."""
     _, _, all_clients = get_existing_clients()
 
     # Récupérer tous les clients actifs avec une adresse
@@ -956,6 +1049,7 @@ def prepare_tournees():
             "nom": fields.get("Nom", ""),
             "adresse": adresse,
             "code_postal": extract_postal_code(adresse),
+            "zone": get_geographic_zone(extract_postal_code(adresse)),
             "nb_bouquets": fields.get("Nb_Bouquets", 1),
             "creneau": fields.get("Créneau_Préféré", ""),
             "pref_couleurs": fields.get("Pref_Couleurs", ""),
@@ -966,38 +1060,57 @@ def prepare_tournees():
         return {
             "total_clients": 0,
             "total_bouquets": 0,
-            "tournee": [],
-            "google_maps_url": "",
+            "tournees": [],
             "message": "Aucun client actif avec adresse"
         }
 
-    # Optimiser l'ordre du parcours
-    optimized_route = optimize_route_order(clients_to_deliver)
+    # Diviser en plusieurs tournées
+    tournees_clients = split_into_tournees(clients_to_deliver, max_clients_per_tournee=12)
 
-    # Générer le lien Google Maps
-    google_maps_url = generate_google_maps_url(optimized_route)
+    # Jours de livraison possibles (mardi et jeudi)
+    delivery_days = get_delivery_days(len(tournees_clients))
 
-    # Calculer les stats par zone
-    zones = defaultdict(int)
-    for client in optimized_route:
-        cp = client.get("code_postal", "Inconnu")
-        zones[cp] += 1
+    # Construire les tournées avec leurs infos
+    tournees = []
+    for i, clients in enumerate(tournees_clients):
+        # Optimiser l'ordre dans chaque tournée
+        optimized = optimize_route_order(clients)
+
+        # Zones couvertes
+        zones_couvertes = list(set(c.get("zone", "Autre") for c in optimized))
+
+        tournees.append({
+            "numero": i + 1,
+            "jour": delivery_days[i] if i < len(delivery_days) else "À planifier",
+            "clients": optimized,
+            "nb_clients": len(optimized),
+            "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized),
+            "zones": zones_couvertes,
+            "google_maps_url": generate_google_maps_url(optimized),
+            "duree_estimee": f"{len(optimized) * 20}min"  # ~20min par client (trajet + livraison)
+        })
 
     return {
-        "total_clients": len(optimized_route),
-        "total_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized_route),
-        "tournee": optimized_route,
-        "google_maps_url": google_maps_url,
-        "zones": dict(zones),
-        "jour_suggere": get_suggested_delivery_day()
+        "total_clients": len(clients_to_deliver),
+        "total_bouquets": sum(c.get("nb_bouquets", 1) for c in clients_to_deliver),
+        "nb_tournees": len(tournees),
+        "tournees": tournees,
+        "message": f"{len(tournees)} tournées générées pour {len(clients_to_deliver)} clients"
     }
 
 
-def get_suggested_delivery_day() -> str:
-    """Suggère le meilleur jour de livraison (prochain mardi ou jeudi)."""
-    today = datetime.now().date()
+def get_delivery_days(nb_tournees: int) -> list:
+    """Retourne une liste de jours de livraison pour N tournées.
 
-    # Mardi (1) ou Jeudi (3) - jours typiques de livraison
+    Stratégie:
+    - Si 1 tournée: prochain mardi ou jeudi
+    - Si 2 tournées: mardi ET jeudi de la même semaine
+    - Si 3+ tournées: mardi/jeudi sur plusieurs semaines
+    """
+    today = datetime.now().date()
+    days = []
+
+    # Calculer le prochain mardi et jeudi
     days_until_tuesday = (1 - today.weekday()) % 7
     days_until_thursday = (3 - today.weekday()) % 7
 
@@ -1006,14 +1119,33 @@ def get_suggested_delivery_day() -> str:
     if days_until_thursday == 0:
         days_until_thursday = 7
 
-    if days_until_tuesday <= days_until_thursday:
-        next_day = today + timedelta(days=days_until_tuesday)
-        day_name = "Mardi"
-    else:
-        next_day = today + timedelta(days=days_until_thursday)
-        day_name = "Jeudi"
+    # Créer une liste ordonnée des prochains jours de livraison
+    delivery_slots = []
 
-    return f"{day_name} {next_day.strftime('%d/%m/%Y')}"
+    # Ajouter les mardis et jeudis des 4 prochaines semaines
+    for week in range(4):
+        tuesday = today + timedelta(days=days_until_tuesday + 7 * week)
+        thursday = today + timedelta(days=days_until_thursday + 7 * week)
+
+        if tuesday < thursday:
+            delivery_slots.append(("Mardi", tuesday))
+            delivery_slots.append(("Jeudi", thursday))
+        else:
+            delivery_slots.append(("Jeudi", thursday))
+            delivery_slots.append(("Mardi", tuesday))
+
+    # Retourner les N premiers jours
+    for i in range(min(nb_tournees, len(delivery_slots))):
+        day_name, date = delivery_slots[i]
+        days.append(f"{day_name} {date.strftime('%d/%m/%Y')}")
+
+    return days
+
+
+def get_suggested_delivery_day() -> str:
+    """Suggère le meilleur jour de livraison (prochain mardi ou jeudi)."""
+    days = get_delivery_days(1)
+    return days[0] if days else "À planifier"
 
 
 # ==================== FACTURATION ====================

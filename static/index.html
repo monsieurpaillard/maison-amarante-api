@@ -338,17 +338,21 @@
     <!-- Tournées Tab -->
     <div id="tournees" class="tab-content">
         <div class="card">
-            <h3>🚚 Tournée de la semaine</h3>
-            <p>Génère un itinéraire optimisé pour tous les clients actifs</p>
-            <button class="btn btn-primary" id="prepareTourneesBtn">Calculer la tournée</button>
+            <h3>🚚 Tournées de la semaine</h3>
+            <p>Génère des itinéraires optimisés, divisés par zones géographiques (~12 clients max par tournée)</p>
+            <button class="btn btn-primary" id="prepareTourneesBtn">Calculer les tournées</button>
 
             <div class="loading" id="tourneesLoading">
                 <div class="spinner"></div>
-                <div>Calcul de l'itinéraire...</div>
+                <div>Calcul des itinéraires...</div>
             </div>
 
             <div id="tourneesResults" style="display: none;">
-                <div class="stats">
+                <div class="stats" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="stat-box">
+                        <div class="stat-number" id="nbTournees">0</div>
+                        <div class="stat-label">Tournées</div>
+                    </div>
                     <div class="stat-box">
                         <div class="stat-number" id="totalClients">0</div>
                         <div class="stat-label">Clients</div>
@@ -358,19 +362,13 @@
                         <div class="stat-label">Bouquets</div>
                     </div>
                 </div>
-                <div id="jourSuggere" style="text-align: center; margin: 15px 0; font-size: 1.1em;"></div>
-                <a id="googleMapsLink" href="#" target="_blank" class="btn" style="background: #4285f4; display: block; text-align: center; margin: 15px 0;">
-                    🗺️ Ouvrir dans Google Maps
-                </a>
+                <p id="tourneesMessage" style="text-align: center; margin: 10px 0; color: #666; font-size: 0.9em;"></p>
             </div>
 
             <div class="error" id="tourneesError"></div>
         </div>
 
-        <div id="tourneesList" class="card" style="display: none;">
-            <h4>📋 Ordre de livraison</h4>
-            <div id="tourneesListContent"></div>
-        </div>
+        <div id="tourneesList" style="display: none;"></div>
     </div>
     
     <!-- Liens Tab -->
@@ -655,8 +653,10 @@
         const tourneesLoading = document.getElementById('tourneesLoading');
         const tourneesResults = document.getElementById('tourneesResults');
         const tourneesList = document.getElementById('tourneesList');
-        const tourneesListContent = document.getElementById('tourneesListContent');
         const tourneesError = document.getElementById('tourneesError');
+
+        // Couleurs pour les tournées
+        const tourneeColors = ['#6c5ce7', '#00b894', '#e17055', '#0984e3', '#fdcb6e', '#e84393'];
 
         prepareTourneesBtn.addEventListener('click', async () => {
             prepareTourneesBtn.disabled = true;
@@ -675,40 +675,57 @@
                     return;
                 }
 
-                // Stats
+                // Stats globales
+                document.getElementById('nbTournees').textContent = data.nb_tournees || 0;
                 document.getElementById('totalClients').textContent = data.total_clients || 0;
                 document.getElementById('totalBouquets').textContent = data.total_bouquets || 0;
-
-                // Jour suggéré
-                const jourSuggere = document.getElementById('jourSuggere');
-                jourSuggere.innerHTML = data.jour_suggere ? `📅 <strong>${data.jour_suggere}</strong>` : '';
-
-                // Lien Google Maps
-                const mapsLink = document.getElementById('googleMapsLink');
-                if (data.google_maps_url) {
-                    mapsLink.href = data.google_maps_url;
-                    mapsLink.style.display = 'block';
-                } else {
-                    mapsLink.style.display = 'none';
-                }
+                document.getElementById('tourneesMessage').textContent = data.message || '';
 
                 tourneesResults.style.display = 'block';
 
-                // Liste des clients dans l'ordre
-                const tournee = data.tournee || [];
-                if (tournee.length === 0) {
-                    tourneesListContent.innerHTML = '<p>Aucun client à livrer.</p>';
+                // Afficher chaque tournée
+                const tournees = data.tournees || [];
+                if (tournees.length === 0) {
+                    tourneesList.innerHTML = '<div class="card"><p>Aucun client à livrer.</p></div>';
+                    tourneesList.style.display = 'block';
                 } else {
-                    tourneesListContent.innerHTML = tournee.map((c, i) => `
-                        <div style="display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
-                            <span style="background: #667eea; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-weight: bold; font-size: 0.85em;">${i + 1}</span>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">${c.nom}</div>
-                                <div style="font-size: 0.85em; color: #666;">${c.adresse || 'Pas d\'adresse'}</div>
-                                <div style="font-size: 0.8em; color: #999;">${c.nb_bouquets} bouquet(s) ${c.creneau ? '· ' + c.creneau : ''}</div>
+                    tourneesList.innerHTML = tournees.map((t, idx) => {
+                        const color = tourneeColors[idx % tourneeColors.length];
+                        const clients = t.clients || [];
+                        return `
+                            <div class="card" style="border-left: 4px solid ${color}; margin-bottom: 15px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <div>
+                                        <h4 style="margin: 0; color: ${color};">Tournée ${t.numero}</h4>
+                                        <div style="font-size: 0.85em; color: #666; margin-top: 4px;">
+                                            📅 ${t.jour} · ${t.nb_clients} clients · ${t.nb_bouquets} bouquets · ~${t.duree_estimee}
+                                        </div>
+                                        <div style="font-size: 0.8em; color: #999; margin-top: 2px;">
+                                            ${t.zones?.join(', ') || ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                <a href="${t.google_maps_url}" target="_blank" class="btn" style="background: ${color}; display: block; text-align: center; margin: 10px 0; padding: 10px;">
+                                    🗺️ Ouvrir dans Google Maps
+                                </a>
+                                <details style="margin-top: 10px;">
+                                    <summary style="cursor: pointer; color: #666; font-size: 0.9em;">Voir les ${clients.length} clients</summary>
+                                    <div style="margin-top: 10px;">
+                                        ${clients.map((c, i) => `
+                                            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+                                                <span style="background: ${color}; color: white; border-radius: 50%; min-width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold; font-size: 0.75em;">${i + 1}</span>
+                                                <div style="flex: 1; min-width: 0;">
+                                                    <div style="font-weight: 600; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${c.nom}</div>
+                                                    <div style="font-size: 0.8em; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${c.adresse || 'Pas d\'adresse'}</div>
+                                                    <div style="font-size: 0.75em; color: #999;">${c.nb_bouquets} bouquet(s) ${c.creneau ? '· ' + c.creneau : ''}</div>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </details>
                             </div>
-                        </div>
-                    `).join('');
+                        `;
+                    }).join('');
                     tourneesList.style.display = 'block';
                 }
 
