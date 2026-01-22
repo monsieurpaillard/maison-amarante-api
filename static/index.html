@@ -327,9 +327,9 @@
         </div>
         
         <div class="card">
-            <h3>📥 Sync Pennylane uniquement</h3>
-            <p>Importe les nouveaux devis et factures depuis Pennylane</p>
-            <button class="btn btn-warning" id="syncPennylaneBtn">Sync Pennylane</button>
+            <h3>🧪 Sync Pennylane (SANDBOX)</h3>
+            <p>⚠️ Mode test : utilise des données fake, pas le vrai Pennylane</p>
+            <button class="btn btn-warning" id="syncPennylaneBtn">Sync Fake Pennylane</button>
         </div>
         
         <div class="card">
@@ -545,7 +545,8 @@
         }
         
         syncAllBtn.addEventListener('click', () => doSync('/api/sync', syncAllBtn));
-        syncPennylaneBtn.addEventListener('click', () => doSync('/api/sync/pennylane', syncPennylaneBtn));
+        // TODO: Remettre '/api/sync/pennylane' quand la sandbox n'est plus nécessaire
+        syncPennylaneBtn.addEventListener('click', () => doSync('/api/test/fake-pennylane', syncPennylaneBtn));
         syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn));
         
         // Tournées
