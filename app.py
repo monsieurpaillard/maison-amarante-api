@@ -554,7 +554,7 @@ IMPORTANT: Utilise le NOM EXACT après ### comme clé JSON (ex: si "### FAKE Hô
         },
         json={
             "model": "claude-3-haiku-20240307",
-            "max_tokens": 8000,
+            "max_tokens": 4096,
             "messages": [{"role": "user", "content": prompt}]
         },
         timeout=60
