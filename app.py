@@ -852,43 +852,6 @@ def sync_all():
 
 # ==================== PLANNING TOURNÉES ====================
 
-def get_clients_to_deliver():
-    """Récupère les clients à livrer (basé sur Prochaine_Livraison et clients actifs)"""
-    _, _, all_clients = get_existing_clients()
-    
-    to_deliver = []
-    today = datetime.now().date()
-    end_of_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    
-    for client in all_clients:
-        fields = client.get("fields", {})
-        
-        # Client actif ?
-        if not fields.get("Actif", False):
-            continue
-        
-        # Prochaine livraison dans le mois ?
-        prochaine = fields.get("Prochaine_Livraison", "")
-        if prochaine:
-            try:
-                prochaine_date = datetime.strptime(prochaine, "%Y-%m-%d").date()
-                if today <= prochaine_date <= end_of_month:
-                    to_deliver.append({
-                        "id": client["id"],
-                        "nom": fields.get("Nom", ""),
-                        "adresse": fields.get("Adresse", ""),
-                        "persona": fields.get("Persona", ""),
-                        "nb_bouquets": fields.get("Nb_Bouquets", 1),
-                        "creneau": fields.get("Créneau_Préféré", ""),
-                        "prochaine_livraison": prochaine,
-                        "code_postal": extract_postal_code(fields.get("Adresse", ""))
-                    })
-            except ValueError:
-                pass
-    
-    return to_deliver
-
-
 def extract_postal_code(address: str) -> str:
     """Extrait le code postal d'une adresse"""
     import re
@@ -896,98 +859,161 @@ def extract_postal_code(address: str) -> str:
     return match.group(1) if match else ""
 
 
-def group_deliveries_by_zone_and_persona(clients: list) -> dict:
-    """Regroupe les clients par zone et persona pour optimiser les tournées"""
-    groups = defaultdict(list)
-    
+def get_zone_order(code_postal: str) -> int:
+    """Retourne un ordre de zone pour optimiser le parcours géographique.
+    Ordre: Paris centre → Paris périphérique → Banlieue proche → Banlieue loin
+    """
+    if not code_postal:
+        return 999
+
+    # Paris par arrondissement (spirale depuis le centre)
+    paris_order = {
+        "75001": 1, "75002": 2, "75003": 3, "75004": 4,  # Centre
+        "75005": 5, "75006": 6, "75007": 7, "75008": 8,  # Rive gauche + ouest
+        "75009": 9, "75010": 10, "75011": 11, "75012": 12,  # Est
+        "75013": 13, "75014": 14, "75015": 15, "75016": 16,  # Sud-ouest
+        "75017": 17, "75018": 18, "75019": 19, "75020": 20,  # Nord-est
+    }
+
+    if code_postal in paris_order:
+        return paris_order[code_postal]
+
+    # Banlieue par département
+    if code_postal.startswith("92"):
+        return 30 + int(code_postal[2:]) if code_postal[2:].isdigit() else 35
+    if code_postal.startswith("93"):
+        return 50 + int(code_postal[2:]) if code_postal[2:].isdigit() else 55
+    if code_postal.startswith("94"):
+        return 70 + int(code_postal[2:]) if code_postal[2:].isdigit() else 75
+
+    return 999
+
+
+def optimize_route_order(clients: list) -> list:
+    """Optimise l'ordre des clients pour minimiser le temps de trajet.
+    Algorithme simple: tri par zone géographique (code postal).
+    """
+    # Trier par zone géographique
+    return sorted(clients, key=lambda c: (
+        get_zone_order(c.get("code_postal", "")),
+        c.get("code_postal", ""),
+        c.get("adresse", "")
+    ))
+
+
+def generate_google_maps_url(clients: list, start_address: str = None) -> str:
+    """Génère un lien Google Maps avec l'itinéraire optimisé.
+
+    Format: https://www.google.com/maps/dir/origin/stop1/stop2/.../destination
+    """
+    import urllib.parse
+
+    if not clients:
+        return ""
+
+    addresses = []
+
+    # Point de départ (optionnel)
+    if start_address:
+        addresses.append(start_address)
+
+    # Ajouter toutes les adresses clients
     for client in clients:
-        # Grouper par arrondissement (2 premiers chiffres du CP) + persona
-        cp = client.get("code_postal", "")
-        arrondissement = cp[:4] if cp.startswith("75") else cp[:3]  # 750XX → 750, 92XXX → 92
-        persona = client.get("persona", "Autre")
-        
-        key = f"{arrondissement}_{persona}"
-        groups[key].append(client)
-    
-    return dict(groups)
+        addr = client.get("adresse", "")
+        if addr:
+            addresses.append(addr)
 
+    if not addresses:
+        return ""
 
-def suggest_delivery_dates(groups: dict) -> list:
-    """Suggère des dates de livraison optimisées"""
-    suggestions = []
-    
-    today = datetime.now().date()
-    
-    # Trouver le prochain jour ouvré
-    def next_weekday(d, weekday):
-        days_ahead = weekday - d.weekday()
-        if days_ahead <= 0:
-            days_ahead += 7
-        return d + timedelta(days=days_ahead)
-    
-    day_index = 0
-    weekdays = [0, 1, 2, 3, 4]  # Lundi à Vendredi
-    
-    for group_key, clients in groups.items():
-        # Assigner un jour de la semaine prochaine
-        delivery_date = next_weekday(today, weekdays[day_index % 5])
-        day_index += 1
-        
-        suggestions.append({
-            "group": group_key,
-            "date": delivery_date.strftime("%Y-%m-%d"),
-            "clients": clients,
-            "nb_clients": len(clients),
-            "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in clients)
-        })
-    
-    return suggestions
+    # Encoder les adresses pour l'URL
+    encoded_addresses = [urllib.parse.quote(addr) for addr in addresses]
+
+    # Construire l'URL Google Maps
+    url = "https://www.google.com/maps/dir/" + "/".join(encoded_addresses)
+
+    return url
 
 
 def prepare_tournees():
-    """Prépare les tournées du mois"""
-    # 1. Récupérer les clients à livrer
-    clients = get_clients_to_deliver()
-    
-    # 2. Ajouter les livraisons "À planifier" existantes
-    livraisons = get_livraisons()
-    livraisons_a_planifier = [l for l in livraisons if l.get("fields", {}).get("Statut") == "À planifier"]
-    
-    # Récupérer les infos clients pour ces livraisons
+    """Prépare UNE tournée optimisée avec tous les clients actifs."""
     _, _, all_clients = get_existing_clients()
-    clients_by_id = {c["id"]: c for c in all_clients}
-    
-    for liv in livraisons_a_planifier:
-        client_ids = liv.get("fields", {}).get("Client", [])
-        if client_ids:
-            client_record = clients_by_id.get(client_ids[0])
-            if client_record:
-                fields = client_record.get("fields", {})
-                # Éviter les doublons
-                if not any(c["id"] == client_record["id"] for c in clients):
-                    clients.append({
-                        "id": client_record["id"],
-                        "livraison_id": liv["id"],
-                        "nom": fields.get("Nom", ""),
-                        "adresse": fields.get("Adresse", ""),
-                        "persona": fields.get("Persona", ""),
-                        "nb_bouquets": fields.get("Nb_Bouquets", 1),
-                        "creneau": fields.get("Créneau_Préféré", ""),
-                        "code_postal": extract_postal_code(fields.get("Adresse", ""))
-                    })
-    
-    # 3. Grouper par zone/persona
-    groups = group_deliveries_by_zone_and_persona(clients)
-    
-    # 4. Suggérer des dates
-    suggestions = suggest_delivery_dates(groups)
-    
+
+    # Récupérer tous les clients actifs avec une adresse
+    clients_to_deliver = []
+    for client in all_clients:
+        fields = client.get("fields", {})
+
+        if not fields.get("Actif", False):
+            continue
+
+        adresse = fields.get("Adresse", "")
+        if not adresse:
+            continue
+
+        clients_to_deliver.append({
+            "id": client["id"],
+            "nom": fields.get("Nom", ""),
+            "adresse": adresse,
+            "code_postal": extract_postal_code(adresse),
+            "nb_bouquets": fields.get("Nb_Bouquets", 1),
+            "creneau": fields.get("Créneau_Préféré", ""),
+            "pref_couleurs": fields.get("Pref_Couleurs", ""),
+            "pref_style": fields.get("Pref_Style", ""),
+        })
+
+    if not clients_to_deliver:
+        return {
+            "total_clients": 0,
+            "total_bouquets": 0,
+            "tournee": [],
+            "google_maps_url": "",
+            "message": "Aucun client actif avec adresse"
+        }
+
+    # Optimiser l'ordre du parcours
+    optimized_route = optimize_route_order(clients_to_deliver)
+
+    # Générer le lien Google Maps
+    google_maps_url = generate_google_maps_url(optimized_route)
+
+    # Calculer les stats par zone
+    zones = defaultdict(int)
+    for client in optimized_route:
+        cp = client.get("code_postal", "Inconnu")
+        zones[cp] += 1
+
     return {
-        "total_clients": len(clients),
-        "total_bouquets": sum(c.get("nb_bouquets", 1) for c in clients),
-        "groups": len(groups),
-        "suggestions": suggestions
+        "total_clients": len(optimized_route),
+        "total_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized_route),
+        "tournee": optimized_route,
+        "google_maps_url": google_maps_url,
+        "zones": dict(zones),
+        "jour_suggere": get_suggested_delivery_day()
     }
+
+
+def get_suggested_delivery_day() -> str:
+    """Suggère le meilleur jour de livraison (prochain mardi ou jeudi)."""
+    today = datetime.now().date()
+
+    # Mardi (1) ou Jeudi (3) - jours typiques de livraison
+    days_until_tuesday = (1 - today.weekday()) % 7
+    days_until_thursday = (3 - today.weekday()) % 7
+
+    if days_until_tuesday == 0:
+        days_until_tuesday = 7
+    if days_until_thursday == 0:
+        days_until_thursday = 7
+
+    if days_until_tuesday <= days_until_thursday:
+        next_day = today + timedelta(days=days_until_tuesday)
+        day_name = "Mardi"
+    else:
+        next_day = today + timedelta(days=days_until_thursday)
+        day_name = "Jeudi"
+
+    return f"{day_name} {next_day.strftime('%d/%m/%Y')}"
 
 
 # ==================== FACTURATION ====================
@@ -1658,12 +1684,13 @@ def api_parse_clients():
 
 @app.route("/api/tournees", methods=["GET"])
 def api_tournees():
-    """Prépare les tournées"""
+    """Prépare la tournée optimisée de la semaine"""
     try:
         results = prepare_tournees()
         return jsonify(results)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @app.route("/api/facturer", methods=["POST"])

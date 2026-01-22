@@ -338,32 +338,39 @@
     <!-- Tournées Tab -->
     <div id="tournees" class="tab-content">
         <div class="card">
-            <h3>🚚 Préparer les tournées</h3>
-            <p>Génère les suggestions de tournées optimisées par zone et persona</p>
-            <button class="btn btn-primary" id="prepareTourneesBtn">Préparer les tournées</button>
-            
+            <h3>🚚 Tournée de la semaine</h3>
+            <p>Génère un itinéraire optimisé pour tous les clients actifs</p>
+            <button class="btn btn-primary" id="prepareTourneesBtn">Calculer la tournée</button>
+
             <div class="loading" id="tourneesLoading">
                 <div class="spinner"></div>
-                <div>Calcul en cours...</div>
+                <div>Calcul de l'itinéraire...</div>
             </div>
-            
+
             <div id="tourneesResults" style="display: none;">
                 <div class="stats">
                     <div class="stat-box">
                         <div class="stat-number" id="totalClients">0</div>
-                        <div class="stat-label">Clients à livrer</div>
+                        <div class="stat-label">Clients</div>
                     </div>
                     <div class="stat-box">
                         <div class="stat-number" id="totalBouquets">0</div>
                         <div class="stat-label">Bouquets</div>
                     </div>
                 </div>
+                <div id="jourSuggere" style="text-align: center; margin: 15px 0; font-size: 1.1em;"></div>
+                <a id="googleMapsLink" href="#" target="_blank" class="btn" style="background: #4285f4; display: block; text-align: center; margin: 15px 0;">
+                    🗺️ Ouvrir dans Google Maps
+                </a>
             </div>
-            
+
             <div class="error" id="tourneesError"></div>
         </div>
-        
-        <div id="tourneesList"></div>
+
+        <div id="tourneesList" class="card" style="display: none;">
+            <h4>📋 Ordre de livraison</h4>
+            <div id="tourneesListContent"></div>
+        </div>
     </div>
     
     <!-- Liens Tab -->
@@ -648,53 +655,63 @@
         const tourneesLoading = document.getElementById('tourneesLoading');
         const tourneesResults = document.getElementById('tourneesResults');
         const tourneesList = document.getElementById('tourneesList');
+        const tourneesListContent = document.getElementById('tourneesListContent');
         const tourneesError = document.getElementById('tourneesError');
-        
+
         prepareTourneesBtn.addEventListener('click', async () => {
             prepareTourneesBtn.disabled = true;
             tourneesLoading.classList.add('show');
             tourneesResults.style.display = 'none';
-            tourneesList.innerHTML = '';
+            tourneesList.style.display = 'none';
             tourneesError.classList.remove('show');
-            
+
             try {
                 const response = await fetch('/api/tournees');
                 const data = await response.json();
-                
+
                 if (data.error) {
                     tourneesError.textContent = 'Erreur: ' + data.error;
                     tourneesError.classList.add('show');
                     return;
                 }
-                
+
+                // Stats
                 document.getElementById('totalClients').textContent = data.total_clients || 0;
                 document.getElementById('totalBouquets').textContent = data.total_bouquets || 0;
-                tourneesResults.style.display = 'block';
-                
-                // Afficher les groupes
-                const suggestions = data.suggestions || [];
-                if (suggestions.length === 0) {
-                    tourneesList.innerHTML = '<div class="card"><p>Aucune livraison à planifier pour le moment.</p></div>';
+
+                // Jour suggéré
+                const jourSuggere = document.getElementById('jourSuggere');
+                jourSuggere.innerHTML = data.jour_suggere ? `📅 <strong>${data.jour_suggere}</strong>` : '';
+
+                // Lien Google Maps
+                const mapsLink = document.getElementById('googleMapsLink');
+                if (data.google_maps_url) {
+                    mapsLink.href = data.google_maps_url;
+                    mapsLink.style.display = 'block';
                 } else {
-                    tourneesList.innerHTML = suggestions.map(s => `
-                        <div class="tournee-group">
-                            <div class="tournee-header">
-                                <span class="tournee-title">${s.group.replace('_', ' - ')}</span>
-                                <span class="tournee-date">📅 ${s.date}</span>
-                            </div>
-                            <div class="tournee-stats">${s.nb_clients} clients · ${s.nb_bouquets} bouquets</div>
-                            <div class="tournee-clients">
-                                ${s.clients.map(c => `
-                                    <div class="client-item">
-                                        <span class="client-name">${c.nom}</span>
-                                        <span class="client-info">${c.nb_bouquets} bouquet(s)</span>
-                                    </div>
-                                `).join('')}
+                    mapsLink.style.display = 'none';
+                }
+
+                tourneesResults.style.display = 'block';
+
+                // Liste des clients dans l'ordre
+                const tournee = data.tournee || [];
+                if (tournee.length === 0) {
+                    tourneesListContent.innerHTML = '<p>Aucun client à livrer.</p>';
+                } else {
+                    tourneesListContent.innerHTML = tournee.map((c, i) => `
+                        <div style="display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
+                            <span style="background: #667eea; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-weight: bold; font-size: 0.85em;">${i + 1}</span>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">${c.nom}</div>
+                                <div style="font-size: 0.85em; color: #666;">${c.adresse || 'Pas d\'adresse'}</div>
+                                <div style="font-size: 0.8em; color: #999;">${c.nb_bouquets} bouquet(s) ${c.creneau ? '· ' + c.creneau : ''}</div>
                             </div>
                         </div>
                     `).join('');
+                    tourneesList.style.display = 'block';
                 }
-                
+
             } catch (err) {
                 tourneesError.textContent = 'Erreur: ' + err.message;
                 tourneesError.classList.add('show');
