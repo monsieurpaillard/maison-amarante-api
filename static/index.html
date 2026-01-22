@@ -337,6 +337,13 @@
             <p>Met à jour les clients depuis Suivi Facturation</p>
             <button class="btn btn-success" id="syncClientsBtn">Sync Clients</button>
         </div>
+
+        <div class="card" style="border: 2px solid #e74c3c;">
+            <h3>🗑️ Cleanup Test Data</h3>
+            <p>Supprime toutes les données TEST et FAKE des bases Airtable</p>
+            <button class="btn" style="background: #e74c3c;" id="cleanupBtn">Nettoyer les données test</button>
+            <div id="cleanupResult" style="margin-top: 10px; display: none;"></div>
+        </div>
     </div>
     
     <!-- Tournées Tab -->
@@ -567,7 +574,27 @@
         // TODO: Remettre '/api/sync/pennylane' quand la sandbox n'est plus nécessaire
         syncPennylaneBtn.addEventListener('click', () => doSync('/api/test/fake-pennylane', syncPennylaneBtn));
         syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn));
-        
+
+        // Cleanup
+        const cleanupBtn = document.getElementById('cleanupBtn');
+        const cleanupResult = document.getElementById('cleanupResult');
+        cleanupBtn.addEventListener('click', async () => {
+            if (!confirm('Supprimer toutes les données TEST et FAKE ?')) return;
+            cleanupBtn.disabled = true;
+            cleanupResult.style.display = 'none';
+            try {
+                const response = await fetch('/api/test/cleanup', { method: 'POST' });
+                const data = await response.json();
+                cleanupResult.innerHTML = `<span style="color: #27ae60;">✅ ${data.deleted} cartes supprimées</span>`;
+                cleanupResult.style.display = 'block';
+            } catch (err) {
+                cleanupResult.innerHTML = `<span style="color: #e74c3c;">❌ Erreur: ${err.message}</span>`;
+                cleanupResult.style.display = 'block';
+            } finally {
+                cleanupBtn.disabled = false;
+            }
+        });
+
         // Tournées
         const prepareTourneesBtn = document.getElementById('prepareTourneesBtn');
         const tourneesLoading = document.getElementById('tourneesLoading');
