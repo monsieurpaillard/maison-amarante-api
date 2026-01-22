@@ -489,12 +489,16 @@ def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
     BATCH_SIZE = 10
     all_parsed = {}
 
+    print(f"[PARSE] Total clients to parse: {len(clients_with_notes)} in {(len(clients_with_notes) + BATCH_SIZE - 1) // BATCH_SIZE} batches")
+
     for i in range(0, len(clients_with_notes), BATCH_SIZE):
         batch = clients_with_notes[i:i + BATCH_SIZE]
+        print(f"[PARSE] Starting batch {i // BATCH_SIZE + 1} with {len(batch)} clients")
         batch_result = _parse_batch_with_claude(batch)
+        print(f"[PARSE] Batch {i // BATCH_SIZE + 1} result: {len(batch_result)} clients, keys: {list(batch_result.keys())[:3]}...")
         all_parsed.update(batch_result)
-        print(f"[PARSE] Batch {i // BATCH_SIZE + 1}: parsed {len(batch_result)} clients")
 
+    print(f"[PARSE] Total parsed: {len(all_parsed)} clients")
     return all_parsed
 
 
@@ -712,12 +716,17 @@ def sync_suivi_to_clients():
             if notes.strip():
                 clients_to_parse.append({"name": client_name, "notes": notes})
 
-    # 2. Batch parsing avec Claude (1 seul appel pour tous les clients)
+    # 2. Batch parsing avec Claude
     parsed_data = {}
     if clients_to_parse:
         results["details"].append(f"🤖 Parsing IA de {len(clients_to_parse)} notes...")
+        print(f"[SYNC] Sending {len(clients_to_parse)} clients to parse")
+        print(f"[SYNC] First client: {clients_to_parse[0]['name']}")
         parsed_data = parse_all_clients_notes_with_claude(clients_to_parse)
         results["notes_parsed"] = len(parsed_data)
+        print(f"[SYNC] Parsed data has {len(parsed_data)} keys")
+        if parsed_data:
+            print(f"[SYNC] First parsed key: {list(parsed_data.keys())[0]}")
 
     # 3. Traiter chaque client avec les infos parsées
     for card_info in active_cards:
