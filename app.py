@@ -1088,6 +1088,78 @@ def health():
     return jsonify({"status": "ok", "service": "Maison Amarante API v4"})
 
 
+@app.route("/api/test/seed", methods=["POST"])
+def api_test_seed():
+    """Crée des cartes de test dans Suivi Facturation"""
+    test_cards = [
+        {
+            "Nom du Client": "TEST Boulangerie Martin",
+            "Statut": "Abonnements",
+            "Montant": 150,
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": "Livraison le mardi matin uniquement. 2 bouquets moyens. Aime les tons chauds (orange, jaune)."
+        },
+        {
+            "Nom du Client": "TEST Hôtel Lumière",
+            "Statut": "À livrer",
+            "Montant": 280,
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": "Grand hall d'entrée, bouquet XL. Pas de fleurs rouges. Livrer avant 9h. Adresse: 45 rue du Faubourg, 75008 Paris"
+        },
+        {
+            "Nom du Client": "TEST Café des Arts",
+            "Statut": "Essai gratuit",
+            "Montant": 0,
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": "Premier essai. Petits bouquets. Style champêtre. Contact: Marie 06 12 34 56 78"
+        },
+        {
+            "Nom du Client": "TEST Boutique Élégance",
+            "Statut": "Factures",
+            "Montant": 95,
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": "Abonnement mensuel. 3 bouquets S. Couleurs pastel uniquement. Ne livre pas le lundi."
+        },
+        {
+            "Nom du Client": "TEST Cabinet Avocat",
+            "Statut": "Archives",
+            "Montant": 120,
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": "Client arrêté - pour tester la désactivation"
+        }
+    ]
+
+    results = {"created": 0, "errors": [], "details": []}
+
+    for card in test_cards:
+        result = create_suivi_card(card)
+        if result["success"]:
+            results["created"] += 1
+            results["details"].append(f"✅ {card['Nom du Client']} ({card['Statut']})")
+        else:
+            results["errors"].append(f"❌ {card['Nom du Client']}: {result['error']}")
+
+    return jsonify(results)
+
+
+@app.route("/api/test/cleanup", methods=["POST"])
+def api_test_cleanup():
+    """Supprime les cartes de test (commençant par TEST)"""
+    cards = get_suivi_cards()
+    deleted = 0
+
+    for card in cards:
+        name = card.get("fields", {}).get("Nom du Client", "")
+        if name.startswith("TEST "):
+            record_id = card["id"]
+            url = f"https://api.airtable.com/v0/{SUIVI_BASE_ID}/{SUIVI_TABLE_ID}/{record_id}"
+            response = req.delete(url, headers=get_airtable_headers())
+            if response.status_code == 200:
+                deleted += 1
+
+    return jsonify({"deleted": deleted})
+
+
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
     """Synchronisation complète Pennylane → Suivi → Clients"""
