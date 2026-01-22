@@ -1229,92 +1229,34 @@ def api_test_cleanup():
 
 @app.route("/api/test/parse-debug", methods=["POST"])
 def api_test_parse_debug():
-    """Debug endpoint pour tester le parsing Claude - version détaillée"""
-    # Test avec 3 clients
+    """Debug endpoint - teste le parsing avec les vrais noms FAKE"""
+    # Test avec des noms identiques aux vrais fake clients
     test_clients = [
-        {"name": "Test Hôtel Paris", "notes": "Hebdomadaire. 3 bouquets L. Style classique. Adresse: 10 rue de Rivoli, 75001 Paris. Livraison lundi 8h"},
-        {"name": "Test Salon Coiffure", "notes": "2 bouquets S. Moderne coloré. Adresse: 25 avenue Mozart, 75016 Paris. Mardi matin"},
-        {"name": "Test Restaurant Bio", "notes": "Mensuel. 1 bouquet M champêtre. Adresse: 5 rue du Commerce, 75015 Paris"}
+        {"name": "FAKE Hôtel du Louvre", "notes": "Hebdomadaire. 4 bouquets XL hall + 2 M réception. Style classique luxe. Adresse: 2 place du Palais Royal, 75001 Paris. Livraison lundi 7h"},
+        {"name": "FAKE Salon Coiffure Madeleine", "notes": "Hebdomadaire. 2 bouquets S. Chic parisien. Adresse: 15 rue Tronchet, 75008 Paris. Mardi matin uniquement"},
+        {"name": "FAKE Restaurant Les Halles", "notes": "3 bouquets M tables. Couleurs chaudes (rouge, orange). Adresse: 15 rue Coquillière, 75001 Paris. Fermé dimanche. Livrer avant 11h"}
     ]
 
-    debug_info = {"steps": []}
-
-    # Reproduire la logique de parsing avec debug
-    clients_with_notes = [c for c in test_clients if c.get("notes", "").strip()]
-    debug_info["steps"].append(f"Filtered {len(clients_with_notes)} clients with notes")
-
-    clients_text = "\n\n".join([
-        f"### {c['name']}\n{c['notes']}"
-        for c in clients_with_notes
-    ])
-    debug_info["prompt_preview"] = clients_text[:300]
-
-    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients.
-
-{clients_text}
-
----
-
-JSON avec NOM EXACT après ### comme clé:
-{{
-    "NOM EXACT": {{"persona":"type","frequence":"freq","nb_bouquets":N,"tailles":["S/M/L/XL"],"pref_couleurs":["couleur"],"pref_style":"style","creneau_prefere":"jour","adresse":"adresse","instructions_speciales":"notes"}}
-}}
-
-IMPORTANT: Garde le nom tel quel (ex: "Test Hôtel Paris" → clé = "Test Hôtel Paris")"""
-
-    debug_info["prompt_length"] = len(prompt)
-
     try:
-        response = req.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 4000,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=60
-        )
+        # Utilise la vraie fonction de parsing
+        result = parse_all_clients_notes_with_claude(test_clients)
 
-        debug_info["status_code"] = response.status_code
-
-        if response.status_code != 200:
-            debug_info["error_response"] = response.text[:500]
-            return jsonify(debug_info)
-
-        response_json = response.json()
-        text = response_json["content"][0]["text"].strip()
-        debug_info["raw_response_length"] = len(text)
-        debug_info["raw_response_preview"] = text[:500]
-
-        # Nettoyer le JSON
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.strip()
-            debug_info["steps"].append("Cleaned backticks from response")
-
-        debug_info["cleaned_json_preview"] = text[:500]
-
-        try:
-            parsed = json.loads(text)
-            debug_info["parsed_count"] = len(parsed)
-            debug_info["parsed_data"] = parsed
-        except Exception as e:
-            debug_info["json_parse_error"] = str(e)
-
-        return jsonify(debug_info)
-
+        return jsonify({
+            "test_clients": [c["name"] for c in test_clients],
+            "parsed_count": len(result),
+            "parsed_keys": list(result.keys()),
+            "parsed_data": result,
+            "match_test": {
+                name: name in result
+                for name in [c["name"] for c in test_clients]
+            }
+        })
     except Exception as e:
         import traceback
-        debug_info["exception"] = str(e)
-        debug_info["traceback"] = traceback.format_exc()
-        return jsonify(debug_info)
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        })
 
 
 @app.route("/api/test/sync-all", methods=["POST"])
