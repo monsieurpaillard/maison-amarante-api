@@ -292,10 +292,11 @@
             <h3>🧪 Synchronisation complète (SANDBOX)</h3>
             <p>⚠️ Mode test : Fake Pennylane → Suivi Facturation → Base Clients</p>
             <button class="btn btn-primary" id="syncAllBtn">Tout synchroniser</button>
-            
+            <button class="btn" style="background: #9b59b6; margin-left: 10px;" id="parseBtn">🤖 Parser les notes (IA)</button>
+
             <div class="loading" id="syncLoading">
                 <div class="spinner"></div>
-                <div>Synchronisation en cours...</div>
+                <div id="loadingText">Synchronisation en cours...</div>
             </div>
             
             <div id="syncResults" style="display: none;">
@@ -563,6 +564,64 @@
         
         // TODO: Remettre '/api/sync' quand la sandbox n'est plus nécessaire
         syncAllBtn.addEventListener('click', () => doSync('/api/test/sync-all', syncAllBtn));
+
+        // Parse notes avec IA
+        const parseBtn = document.getElementById('parseBtn');
+        const loadingText = document.getElementById('loadingText');
+        parseBtn.addEventListener('click', async () => {
+            parseBtn.disabled = true;
+            syncAllBtn.disabled = true;
+            syncLoading.classList.add('show');
+            loadingText.textContent = 'Parsing IA en cours (peut prendre 1-2 min)...';
+            syncResults.style.display = 'none';
+            syncError.classList.remove('show');
+
+            let totalParsed = 0;
+            let totalUpdated = 0;
+            let offset = 0;
+            const limit = 15;
+
+            try {
+                // Parse par batches de 15
+                while (true) {
+                    const response = await fetch(`/api/parse-clients?limit=${limit}&offset=${offset}`, { method: 'POST' });
+                    const data = await response.json();
+
+                    if (data.error) {
+                        syncError.textContent = 'Erreur: ' + data.error;
+                        syncError.classList.add('show');
+                        break;
+                    }
+
+                    totalParsed += data.parsed || 0;
+                    totalUpdated += data.updated || 0;
+                    loadingText.textContent = `Parsing IA... ${totalParsed} notes traitées`;
+
+                    if (!data.next_offset) break;
+                    offset = data.next_offset;
+                }
+
+                // Afficher résultats
+                document.getElementById('syncStat1').textContent = totalParsed;
+                document.getElementById('syncLabel1').textContent = 'Notes parsées';
+                document.getElementById('syncStat2').textContent = totalUpdated;
+                document.getElementById('syncLabel2').textContent = 'Clients mis à jour';
+                document.getElementById('syncStat3').textContent = '-';
+                document.getElementById('syncLabel3').textContent = '';
+                document.getElementById('syncStat4').textContent = '-';
+                document.getElementById('syncLabel4').textContent = '';
+                document.getElementById('syncDetailsList').innerHTML = '<p>Champs remplis: Adresse, Créneau, Notes_Spéciales, Nb_Bouquets, Couleurs, Style</p>';
+                syncResults.style.display = 'block';
+            } catch (err) {
+                syncError.textContent = 'Erreur: ' + err.message;
+                syncError.classList.add('show');
+            } finally {
+                syncLoading.classList.remove('show');
+                loadingText.textContent = 'Synchronisation en cours...';
+                parseBtn.disabled = false;
+                syncAllBtn.disabled = false;
+            }
+        });
 
         // Cleanup
         const cleanupBtn = document.getElementById('cleanupBtn');
