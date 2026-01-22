@@ -1546,15 +1546,23 @@ def api_sync_clients():
 
 @app.route("/api/parse-clients", methods=["POST"])
 def api_parse_clients():
-    """Parse les notes des clients avec Claude IA (endpoint séparé car lent)"""
+    """Parse les notes des clients avec Claude IA (endpoint séparé car lent)
+
+    Params optionnels (query string):
+        limit: nombre max de clients à parser (défaut: 10)
+        offset: ignorer les N premiers clients (pour pagination)
+    """
     try:
+        limit = request.args.get("limit", 10, type=int)
+        offset = request.args.get("offset", 0, type=int)
+
         cards = get_suivi_cards()
         clients_by_name, clients_by_pennylane, all_clients = get_existing_clients()
 
         active_statuts = ["Factures", "Abonnements", "Essai gratuit", "À livrer"]
 
         # Collecter les clients actifs avec notes
-        clients_to_parse = []
+        all_clients_to_parse = []
         client_records = {}  # Pour retrouver le record à mettre à jour
 
         for card in cards:
@@ -1567,17 +1575,23 @@ def api_parse_clients():
             if not client_name or statut not in active_statuts or not notes.strip():
                 continue
 
-            clients_to_parse.append({"name": client_name, "notes": notes})
+            all_clients_to_parse.append({"name": client_name, "notes": notes})
 
             # Trouver le client dans Airtable
             existing = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
             if existing:
                 client_records[client_name] = existing["id"]
 
-        if not clients_to_parse:
-            return jsonify({"message": "Aucun client à parser", "parsed": 0})
+        total_clients = len(all_clients_to_parse)
+        if not all_clients_to_parse:
+            return jsonify({"message": "Aucun client à parser", "parsed": 0, "total": 0})
 
-        # Parser avec Claude
+        # Appliquer pagination
+        clients_to_parse = all_clients_to_parse[offset:offset + limit]
+        if not clients_to_parse:
+            return jsonify({"message": "Plus de clients à parser", "parsed": 0, "total": total_clients, "offset": offset})
+
+        # Parser avec Claude (seulement le batch demandé)
         parsed_data = parse_all_clients_notes_with_claude(clients_to_parse)
 
         # Mettre à jour les clients
@@ -1617,9 +1631,12 @@ def api_parse_clients():
                     updated += 1
 
         return jsonify({
-            "clients_to_parse": len(clients_to_parse),
+            "total_clients": total_clients,
+            "batch_size": len(clients_to_parse),
+            "offset": offset,
             "parsed": len([k for k in parsed_data.keys() if not k.startswith("_")]),
-            "updated": updated
+            "updated": updated,
+            "next_offset": offset + limit if offset + limit < total_clients else None
         })
     except Exception as e:
         import traceback
