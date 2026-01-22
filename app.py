@@ -1606,7 +1606,7 @@ def api_parse_clients():
                 continue
 
             update_fields = {}
-            # Champs texte libres (fonctionnent toujours)
+            # Seulement les champs texte libres pour éviter les erreurs Airtable
             if parsed.get("adresse"):
                 update_fields["Adresse"] = parsed["adresse"]
             if parsed.get("creneau_prefere"):
@@ -1615,18 +1615,6 @@ def api_parse_clients():
                 update_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
             if parsed.get("nb_bouquets"):
                 update_fields["Nb_Bouquets"] = int(parsed["nb_bouquets"])
-
-            # Champs single-select - mapper vers valeurs valides
-            persona_map = {"Hôtel": "Hôtel", "Hotel": "Hôtel", "Restaurant": "Restaurant",
-                          "Coiffeur": "Coiffeur", "Bureau": "Bureau", "Retail": "Retail",
-                          "Spa": "Spa", "Galerie": "Galerie", "Clinique": "Clinique"}
-            if parsed.get("persona") and parsed["persona"] in persona_map:
-                update_fields["Persona"] = persona_map[parsed["persona"]]
-
-            freq_map = {"Hebdomadaire": "Hebdomadaire", "Bimensuel": "Bimensuel",
-                       "Mensuel": "Mensuel", "Ponctuel": "Ponctuel"}
-            if parsed.get("frequence") and parsed["frequence"] in freq_map:
-                update_fields["Fréquence"] = freq_map[parsed["frequence"]]
 
             if not update_fields:
                 errors.append(f"{client_name}: no fields to update")
