@@ -41,3 +41,4 @@ Analyse une image ET crée le bouquet.
 - `AIRTABLE_API_KEY` - Token Airtable
 - `AIRTABLE_BASE_ID` - ID de la base Airtable
 - `AIRTABLE_BOUQUETS_TABLE` - ID de la table BOUQUETS
+# Force deploy Thu Jan 22 15:30:22 CET 2026
