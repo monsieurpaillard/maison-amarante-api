@@ -1209,7 +1209,7 @@ def api_test_cleanup():
 
 @app.route("/api/test/parse-debug", methods=["POST"])
 def api_test_parse_debug():
-    """Debug endpoint pour tester le parsing Claude avec des vrais clients"""
+    """Debug endpoint pour tester le parsing Claude - version détaillée"""
     # Test avec 3 clients
     test_clients = [
         {"name": "Test Hôtel Paris", "notes": "Hebdomadaire. 3 bouquets L. Style classique. Adresse: 10 rue de Rivoli, 75001 Paris. Livraison lundi 8h"},
@@ -1217,23 +1217,98 @@ def api_test_parse_debug():
         {"name": "Test Restaurant Bio", "notes": "Mensuel. 1 bouquet M champêtre. Adresse: 5 rue du Commerce, 75015 Paris"}
     ]
 
-    try:
-        # Test la fonction de parsing réelle
-        result = parse_all_clients_notes_with_claude(test_clients)
+    debug_info = {"steps": []}
 
-        return jsonify({
-            "api_key_present": bool(ANTHROPIC_API_KEY),
-            "test_clients_count": len(test_clients),
-            "parsed_count": len(result),
-            "parsed_data": result
-        })
+    # Reproduire la logique de parsing avec debug
+    clients_with_notes = [c for c in test_clients if c.get("notes", "").strip()]
+    debug_info["steps"].append(f"Filtered {len(clients_with_notes)} clients with notes")
+
+    clients_text = "\n\n".join([
+        f"### {c['name']}\n{c['notes']}"
+        for c in clients_with_notes
+    ])
+    debug_info["prompt_preview"] = clients_text[:300]
+
+    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients et extrais les informations structurées pour chacun.
+
+{clients_text}
+
+---
+
+Réponds UNIQUEMENT en JSON valide. Le format doit être un objet avec le nom du client comme clé:
+
+{{
+    "NOM CLIENT 1": {{
+        "persona": "type",
+        "frequence": "fréquence",
+        "nb_bouquets": nombre,
+        "tailles": ["S", "M", "L" ou "XL"],
+        "pref_couleurs": ["couleur1"],
+        "pref_style": "style",
+        "creneau_prefere": "jour/moment",
+        "adresse": "adresse complète",
+        "instructions_speciales": "autres infos"
+    }}
+}}
+
+Important:
+- Extrais UNIQUEMENT ce qui est explicitement mentionné
+- Pour nb_bouquets, compte le total mentionné
+- Pour l'adresse, inclus rue + code postal + ville"""
+
+    debug_info["prompt_length"] = len(prompt)
+
+    try:
+        response = req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 4000,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=60
+        )
+
+        debug_info["status_code"] = response.status_code
+
+        if response.status_code != 200:
+            debug_info["error_response"] = response.text[:500]
+            return jsonify(debug_info)
+
+        response_json = response.json()
+        text = response_json["content"][0]["text"].strip()
+        debug_info["raw_response_length"] = len(text)
+        debug_info["raw_response_preview"] = text[:500]
+
+        # Nettoyer le JSON
+        if "```" in text:
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+            debug_info["steps"].append("Cleaned backticks from response")
+
+        debug_info["cleaned_json_preview"] = text[:500]
+
+        try:
+            parsed = json.loads(text)
+            debug_info["parsed_count"] = len(parsed)
+            debug_info["parsed_data"] = parsed
+        except Exception as e:
+            debug_info["json_parse_error"] = str(e)
+
+        return jsonify(debug_info)
+
     except Exception as e:
         import traceback
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "api_key_present": bool(ANTHROPIC_API_KEY)
-        })
+        debug_info["exception"] = str(e)
+        debug_info["traceback"] = traceback.format_exc()
+        return jsonify(debug_info)
 
 
 @app.route("/api/test/sync-all", methods=["POST"])
