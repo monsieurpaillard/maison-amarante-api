@@ -469,7 +469,7 @@ def update_livraison(record_id: str, fields: dict) -> dict:
 # ==================== CLAUDE HELPERS ====================
 
 def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
-    """Parse les notes de TOUS les clients en un seul appel Claude (batch processing)
+    """Parse les notes de TOUS les clients en batches de 10 pour éviter les timeouts
 
     Args:
         clients_data: liste de {"name": "...", "notes": "..."}
@@ -482,6 +482,24 @@ def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
 
     # Filtrer les clients sans notes
     clients_with_notes = [c for c in clients_data if c.get("notes", "").strip()]
+    if not clients_with_notes:
+        return {}
+
+    # Diviser en batches de 10
+    BATCH_SIZE = 10
+    all_parsed = {}
+
+    for i in range(0, len(clients_with_notes), BATCH_SIZE):
+        batch = clients_with_notes[i:i + BATCH_SIZE]
+        batch_result = _parse_batch_with_claude(batch)
+        all_parsed.update(batch_result)
+        print(f"[PARSE] Batch {i // BATCH_SIZE + 1}: parsed {len(batch_result)} clients")
+
+    return all_parsed
+
+
+def _parse_batch_with_claude(clients_with_notes: list) -> dict:
+    """Parse un batch de clients (max 10) avec Claude"""
     if not clients_with_notes:
         return {}
 
@@ -519,7 +537,7 @@ Valeurs:
 - tailles: S, M, L, XL
 - pref_style: Classique, Moderne, Zen, Champêtre, Luxe, Coloré
 
-IMPORTANT: Utilise le NOM EXACT après ### comme clé JSON (ex: si "### FAKE Hôtel Paris" → clé = "FAKE Hôtel Paris")
+IMPORTANT: Utilise le NOM EXACT après ### comme clé JSON (ex: si "### FAKE Hôtel Paris" → clé = "FAKE Hôtel Paris")"""
 
     print(f"[PARSE] Parsing {len(clients_with_notes)} clients en batch...")
 
