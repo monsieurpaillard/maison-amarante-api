@@ -1112,6 +1112,38 @@ def api_test_fake_pennylane():
     """Simule une sync Pennylane avec des données fake (sans toucher au vrai Pennylane)"""
     import random
 
+    # Cartes directes (avec statut spécifique, pas via Pennylane)
+    direct_cards = [
+        {
+            "id": "FAKE-E001",
+            "name": "FAKE Salon Coiffure Élise",
+            "statut": "Essai gratuit",
+            "montant": 0,
+            "notes": "Premier essai offert. 2 petits bouquets S. Style bucolique, couleurs pastel (rose, blanc). Livraison mardi matin. Adresse: 8 rue des Martyrs, 75009 Paris. Contact: Élise 06 11 22 33 44"
+        },
+        {
+            "id": "FAKE-E002",
+            "name": "FAKE Cabinet Dentaire Sourire",
+            "statut": "Essai gratuit",
+            "montant": 0,
+            "notes": "Test 1 mois. 1 bouquet M pour salle d'attente. Tons apaisants (vert, blanc). Pas de fleurs odorantes. Livrer avant 9h. Adresse: 22 avenue Trudaine, 75009 Paris"
+        },
+        {
+            "id": "FAKE-L001",
+            "name": "FAKE Restaurant Chez Marcel",
+            "statut": "À livrer",
+            "montant": 180,
+            "notes": "Livraison urgente cette semaine. 3 bouquets M. Style classique, rouge et blanc. Adresse: 45 rue du Faubourg Saint-Antoine, 75011 Paris. Fermé le lundi. Contact: Marcel 01 43 55 66 77"
+        },
+        {
+            "id": "FAKE-L002",
+            "name": "FAKE Boutique Bijoux Luna",
+            "statut": "À livrer",
+            "montant": 95,
+            "notes": "Livraison vendredi après-midi uniquement. 1 bouquet S vitrine. Couleurs or/blanc. Style moderne épuré. Adresse: 15 rue de Rivoli, 75004 Paris. Interphone: 1234"
+        }
+    ]
+
     fake_data = {
         "quotes": [
             {"id": "FAKE-Q001", "label": "", "filename": "Devis-FAKE Librairie Voltaire-MAISON AMARANTE-D-2026-001.pdf", "amount": 180},
@@ -1128,18 +1160,18 @@ def api_test_fake_pennylane():
         ]
     }
 
-    # Notes variées pour tester le parsing
+    # Notes variées pour tester le parsing (avec infos livraison complètes)
     fake_notes = {
-        "FAKE Librairie Voltaire": "Devis en attente de validation. Style classique, tons bordeaux. Contact: Pierre 01 42 55 66 77",
-        "FAKE Restaurant Le Jardin": "Devis pour terrasse. 4 bouquets M. Couleurs vives. Pas de lys (allergies clients).",
-        "FAKE Spa Sérénité": "Livraison mercredi uniquement. Bouquets zen, tons blancs et verts. Adresse: 12 rue de la Paix, 75002 Paris",
-        "FAKE Galerie d'Art Moderne": "2 grands bouquets XL par mois. Style contemporain, couleurs neutres. Accès par l'arrière-cour.",
-        "FAKE Clinique Beauté": "3 petits bouquets S. Hypoallergénique obligatoire. Livrer avant 8h. Interphone: 4521",
-        "FAKE Hôtel Le Marais": "Abonnement premium. 5 bouquets/semaine. Mix de styles. Contact: Réception 01 44 55 66 77",
-        "FAKE Boutique Mode Paris": "Abonnement mensuel. Bouquets fashion, roses et pivoines. Fermé le dimanche.",
+        "FAKE Librairie Voltaire": "Devis en attente. Style classique, tons bordeaux/or. 2 bouquets M. Adresse: 34 boulevard Saint-Germain, 75005 Paris. Contact: Pierre 01 42 55 66 77",
+        "FAKE Restaurant Le Jardin": "Devis terrasse. 4 bouquets M. Couleurs vives (orange, jaune). Pas de lys. Livraison jeudi. Adresse: 78 rue de Charonne, 75011 Paris",
+        "FAKE Spa Sérénité": "Livraison mercredi uniquement. 2 bouquets zen M, tons blancs et verts. Adresse: 12 rue de la Paix, 75002 Paris. Accès parking sous-sol",
+        "FAKE Galerie d'Art Moderne": "Bimensuel. 2 bouquets XL. Style contemporain, couleurs neutres (gris, blanc). Adresse: 5 rue de Thorigny, 75003 Paris. Accès par l'arrière-cour",
+        "FAKE Clinique Beauté": "Hebdomadaire. 3 bouquets S. Hypoallergénique. Livrer avant 8h. Adresse: 99 avenue des Champs-Élysées, 75008 Paris. Interphone: 4521",
+        "FAKE Hôtel Le Marais": "Abonnement premium. 5 bouquets/semaine (2L + 3M). Mix de styles. Adresse: 20 rue des Archives, 75004 Paris. Contact: Réception 01 44 55 66 77",
+        "FAKE Boutique Mode Paris": "Mensuel. 2 bouquets M. Roses et pivoines. Fermé dimanche/lundi. Adresse: 67 rue du Faubourg Saint-Honoré, 75008 Paris",
     }
 
-    results = {"quotes_synced": 0, "invoices_synced": 0, "subscriptions_synced": 0, "details": [], "errors": []}
+    results = {"quotes_synced": 0, "invoices_synced": 0, "subscriptions_synced": 0, "essais_synced": 0, "a_livrer_synced": 0, "details": [], "errors": []}
 
     # Check existing cards to avoid duplicates
     existing_cards = get_suivi_cards()
@@ -1203,6 +1235,29 @@ def api_test_fake_pennylane():
             results["details"].append(f"🔄 Abonnement ajouté: {customer_name}")
         else:
             results["errors"].append(f"❌ {customer_name}: {result['error']}")
+
+    # Sync direct cards (Essai gratuit, À livrer)
+    for card in direct_cards:
+        if card["id"] in existing_ids:
+            continue
+        card_fields = {
+            "Nom du Client": card["name"],
+            "ID Pennylane": card["id"],
+            "Montant": card["montant"],
+            "Statut": card["statut"],
+            "Date": datetime.now().strftime("%Y-%m-%d"),
+            "Notes": card["notes"]
+        }
+        result = create_suivi_card(card_fields)
+        if result["success"]:
+            if card["statut"] == "Essai gratuit":
+                results["essais_synced"] += 1
+                results["details"].append(f"🎁 Essai gratuit ajouté: {card['name']}")
+            else:
+                results["a_livrer_synced"] += 1
+                results["details"].append(f"🚚 À livrer ajouté: {card['name']}")
+        else:
+            results["errors"].append(f"❌ {card['name']}: {result['error']}")
 
     return jsonify(results)
 
