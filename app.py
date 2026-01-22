@@ -538,7 +538,7 @@ Important:
             "content-type": "application/json"
         },
         json={
-            "model": "claude-3-5-haiku-20241022",
+            "model": "claude-3-haiku-20240307",
             "max_tokens": 8000,
             "messages": [{"role": "user", "content": prompt}]
         },
@@ -1220,7 +1220,7 @@ def api_test_parse_debug():
                 "content-type": "application/json"
             },
             json={
-                "model": "claude-3-5-haiku-20241022",
+                "model": "claude-3-haiku-20240307",
                 "max_tokens": 100,
                 "messages": [{"role": "user", "content": prompt}]
             },
