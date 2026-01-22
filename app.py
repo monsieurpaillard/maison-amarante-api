@@ -1148,6 +1148,256 @@ def get_suggested_delivery_day() -> str:
     return days[0] if days else "À planifier"
 
 
+# ==================== DISPATCH BOUQUETS ====================
+
+def get_available_bouquets():
+    """Récupère tous les bouquets disponibles depuis Airtable"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = get_airtable_headers()
+
+    all_records = []
+    offset = None
+
+    while True:
+        params = {"pageSize": 100, "filterByFormula": "{Statut} = 'Disponible'"}
+        if offset:
+            params["offset"] = offset
+
+        response = req.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            print(f"[BOUQUETS] Error fetching: {response.text}")
+            break
+
+        data = response.json()
+        all_records.extend(data.get("records", []))
+
+        offset = data.get("offset")
+        if not offset:
+            break
+
+    print(f"[BOUQUETS] Fetched {len(all_records)} available bouquets")
+    return all_records
+
+
+def normalize_text(text: str) -> list:
+    """Normalise un texte en liste de mots-clés pour la comparaison"""
+    if not text:
+        return []
+    # Convertir en minuscules, remplacer les séparateurs, split
+    text = text.lower()
+    for sep in [",", "/", ";", "-", "+"]:
+        text = text.replace(sep, " ")
+    return [w.strip() for w in text.split() if w.strip()]
+
+
+def calculate_match_score(bouquet: dict, client_prefs: dict) -> dict:
+    """Calcule un score de compatibilité entre un bouquet et les préférences d'un client.
+
+    Returns:
+        dict avec score (0-100), détails des matchs
+    """
+    score = 0
+    max_score = 0
+    details = []
+
+    bouquet_fields = bouquet.get("fields", {})
+
+    # 1. Couleurs (poids: 40 points)
+    bouquet_colors = bouquet_fields.get("Couleurs", [])
+    if isinstance(bouquet_colors, str):
+        bouquet_colors = normalize_text(bouquet_colors)
+    else:
+        bouquet_colors = [c.lower() for c in bouquet_colors]
+
+    client_colors = normalize_text(client_prefs.get("pref_couleurs", ""))
+
+    if client_colors:
+        max_score += 40
+        matching_colors = set(bouquet_colors) & set(client_colors)
+        if matching_colors:
+            color_score = min(40, len(matching_colors) * 20)
+            score += color_score
+            details.append(f"Couleurs: {', '.join(matching_colors)}")
+    else:
+        # Pas de préférence = tous les bouquets OK
+        score += 20
+        max_score += 40
+
+    # 2. Style (poids: 35 points)
+    bouquet_style = bouquet_fields.get("Style", "").lower()
+    client_styles = normalize_text(client_prefs.get("pref_style", ""))
+
+    if client_styles:
+        max_score += 35
+        if any(s in bouquet_style or bouquet_style in s for s in client_styles):
+            score += 35
+            details.append(f"Style: {bouquet_style}")
+        elif bouquet_style:
+            # Style différent mais pas incompatible
+            score += 10
+    else:
+        score += 17
+        max_score += 35
+
+    # 3. Taille (poids: 25 points)
+    bouquet_taille = bouquet_fields.get("Taille", "").lower()
+    client_tailles = normalize_text(client_prefs.get("tailles", ""))
+
+    # Mapping des tailles
+    taille_map = {"s": "petit", "m": "moyen", "l": "grand", "xl": "masterpiece"}
+
+    if client_tailles:
+        max_score += 25
+        # Normaliser les tailles
+        normalized_client = []
+        for t in client_tailles:
+            normalized_client.append(taille_map.get(t, t))
+
+        if bouquet_taille in normalized_client or any(t in bouquet_taille for t in normalized_client):
+            score += 25
+            details.append(f"Taille: {bouquet_taille}")
+        else:
+            # Taille différente mais acceptable
+            score += 10
+    else:
+        score += 12
+        max_score += 25
+
+    # Calculer le pourcentage
+    final_score = int((score / max_score) * 100) if max_score > 0 else 50
+
+    return {
+        "score": final_score,
+        "details": details,
+        "bouquet_id": bouquet_fields.get("Bouquet_ID", ""),
+        "bouquet_nom": bouquet_fields.get("Nom", ""),
+        "bouquet_style": bouquet_fields.get("Style", ""),
+        "bouquet_taille": bouquet_fields.get("Taille", ""),
+        "bouquet_couleurs": bouquet_fields.get("Couleurs", []),
+        "bouquet_photo": bouquet_fields.get("Photo", [{}])[0].get("url", "") if bouquet_fields.get("Photo") else "",
+        "record_id": bouquet.get("id", "")
+    }
+
+
+def dispatch_bouquets():
+    """Génère des suggestions de dispatch des bouquets vers les clients.
+
+    Algorithme:
+    1. Récupère les bouquets disponibles
+    2. Récupère les clients actifs avec leurs préférences
+    3. Pour chaque client, calcule le score de chaque bouquet
+    4. Suggère les N meilleurs bouquets (N = nb_bouquets du client)
+    """
+    # Récupérer les bouquets disponibles
+    bouquets = get_available_bouquets()
+    if not bouquets:
+        return {
+            "success": False,
+            "message": "Aucun bouquet disponible",
+            "dispatch": []
+        }
+
+    # Récupérer les clients actifs
+    _, _, all_clients = get_existing_clients()
+
+    clients_to_dispatch = []
+    for client in all_clients:
+        fields = client.get("fields", {})
+
+        if not fields.get("Actif", False):
+            continue
+
+        # Ne prendre que les clients avec une adresse (donc livrable)
+        if not fields.get("Adresse", ""):
+            continue
+
+        clients_to_dispatch.append({
+            "id": client["id"],
+            "nom": fields.get("Nom", ""),
+            "nb_bouquets": fields.get("Nb_Bouquets", 1),
+            "pref_couleurs": fields.get("Pref_Couleurs", ""),
+            "pref_style": fields.get("Pref_Style", ""),
+            "tailles": fields.get("Tailles_Demandées", ""),
+            "notes": fields.get("Notes_Spéciales", ""),
+            "adresse": fields.get("Adresse", ""),
+        })
+
+    if not clients_to_dispatch:
+        return {
+            "success": False,
+            "message": "Aucun client actif à livrer",
+            "dispatch": []
+        }
+
+    # Pour chaque client, calculer les scores et suggérer les meilleurs bouquets
+    dispatch_results = []
+    assigned_bouquets = set()  # Pour éviter d'assigner le même bouquet à plusieurs clients
+
+    # Trier les clients par nombre de bouquets décroissant (les plus gros clients en premier)
+    clients_to_dispatch.sort(key=lambda c: c.get("nb_bouquets", 1), reverse=True)
+
+    for client in clients_to_dispatch:
+        nb_needed = client.get("nb_bouquets", 1)
+
+        # Calculer le score de chaque bouquet disponible (non encore assigné)
+        scored_bouquets = []
+        for bouquet in bouquets:
+            if bouquet["id"] in assigned_bouquets:
+                continue
+
+            match = calculate_match_score(bouquet, {
+                "pref_couleurs": client.get("pref_couleurs", ""),
+                "pref_style": client.get("pref_style", ""),
+                "tailles": client.get("tailles", "")
+            })
+            scored_bouquets.append(match)
+
+        # Trier par score décroissant
+        scored_bouquets.sort(key=lambda x: x["score"], reverse=True)
+
+        # Prendre les N meilleurs
+        suggested = scored_bouquets[:nb_needed]
+
+        # Marquer comme assignés
+        for s in suggested:
+            assigned_bouquets.add(s["record_id"])
+
+        dispatch_results.append({
+            "client_id": client["id"],
+            "client_nom": client["nom"],
+            "client_adresse": client["adresse"],
+            "nb_demandes": nb_needed,
+            "nb_suggeres": len(suggested),
+            "preferences": {
+                "couleurs": client.get("pref_couleurs", ""),
+                "style": client.get("pref_style", ""),
+                "tailles": client.get("tailles", ""),
+                "notes": client.get("notes", "")
+            },
+            "bouquets_suggeres": suggested,
+            "complet": len(suggested) >= nb_needed
+        })
+
+    # Stats
+    total_needed = sum(c.get("nb_bouquets", 1) for c in clients_to_dispatch)
+    total_suggested = sum(len(d["bouquets_suggeres"]) for d in dispatch_results)
+    clients_complets = sum(1 for d in dispatch_results if d["complet"])
+
+    return {
+        "success": True,
+        "message": f"{total_suggested}/{total_needed} bouquets assignés pour {len(clients_to_dispatch)} clients",
+        "stats": {
+            "total_clients": len(clients_to_dispatch),
+            "clients_complets": clients_complets,
+            "bouquets_disponibles": len(bouquets),
+            "bouquets_assignes": total_suggested,
+            "bouquets_demandes": total_needed,
+            "bouquets_manquants": max(0, total_needed - len(bouquets))
+        },
+        "dispatch": dispatch_results
+    }
+
+
 # ==================== FACTURATION ====================
 
 def facturer_livraison(livraison_id: str, invoice_type: str = "one-shot") -> dict:
@@ -1819,6 +2069,17 @@ def api_tournees():
     """Prépare la tournée optimisée de la semaine"""
     try:
         results = prepare_tournees()
+        return jsonify(results)
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/dispatch", methods=["GET"])
+def api_dispatch():
+    """Génère des suggestions de dispatch des bouquets vers les clients"""
+    try:
+        results = dispatch_bouquets()
         return jsonify(results)
     except Exception as e:
         import traceback
