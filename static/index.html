@@ -301,20 +301,20 @@
             <div id="syncResults" style="display: none;">
                 <div class="stats">
                     <div class="stat-box">
-                        <div class="stat-number" id="syncCreated">0</div>
-                        <div class="stat-label">Clients créés</div>
+                        <div class="stat-number" id="syncStat1">0</div>
+                        <div class="stat-label" id="syncLabel1">Clients créés</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-number" id="syncUpdated">0</div>
-                        <div class="stat-label">Mis à jour</div>
+                        <div class="stat-number" id="syncStat2">0</div>
+                        <div class="stat-label" id="syncLabel2">Mis à jour</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-number" id="syncLivraisons">0</div>
-                        <div class="stat-label">Livraisons</div>
+                        <div class="stat-number" id="syncStat3">0</div>
+                        <div class="stat-label" id="syncLabel3">Livraisons</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-number" id="syncDeactivated">0</div>
-                        <div class="stat-label">Désactivés</div>
+                        <div class="stat-number" id="syncStat4">0</div>
+                        <div class="stat-label" id="syncLabel4">Désactivés</div>
                     </div>
                 </div>
                 <div class="details" id="syncDetails">
@@ -521,12 +521,31 @@
                     return;
                 }
                 
-                // Extraire les stats
-                const clients = data.clients || data;
-                document.getElementById('syncCreated').textContent = clients.clients_created || 0;
-                document.getElementById('syncUpdated').textContent = clients.clients_updated || 0;
-                document.getElementById('syncLivraisons').textContent = clients.livraisons_created || 0;
-                document.getElementById('syncDeactivated').textContent = clients.clients_deactivated || 0;
+                // Extraire les stats selon le type de réponse
+                const isPennylaneSync = data.quotes_synced !== undefined;
+
+                if (isPennylaneSync) {
+                    // Stats Pennylane (cartes créées dans Suivi Facturation)
+                    document.getElementById('syncStat1').textContent = data.quotes_synced || 0;
+                    document.getElementById('syncLabel1').textContent = 'Devis';
+                    document.getElementById('syncStat2').textContent = data.invoices_synced || 0;
+                    document.getElementById('syncLabel2').textContent = 'Factures';
+                    document.getElementById('syncStat3').textContent = (data.essais_synced || 0) + (data.a_livrer_synced || 0);
+                    document.getElementById('syncLabel3').textContent = 'Essais/À livrer';
+                    document.getElementById('syncStat4').textContent = data.subscriptions_synced || 0;
+                    document.getElementById('syncLabel4').textContent = 'Abonnements';
+                } else {
+                    // Stats Clients (clients créés/mis à jour)
+                    const clients = data.clients || data;
+                    document.getElementById('syncStat1').textContent = clients.clients_created || 0;
+                    document.getElementById('syncLabel1').textContent = 'Clients créés';
+                    document.getElementById('syncStat2').textContent = clients.clients_updated || 0;
+                    document.getElementById('syncLabel2').textContent = 'Mis à jour';
+                    document.getElementById('syncStat3').textContent = clients.livraisons_created || 0;
+                    document.getElementById('syncLabel3').textContent = 'Livraisons';
+                    document.getElementById('syncStat4').textContent = clients.clients_deactivated || 0;
+                    document.getElementById('syncLabel4').textContent = 'Désactivés';
+                }
                 
                 const details = data.total_details || clients.details || [];
                 document.getElementById('syncDetailsList').innerHTML = details.length 
