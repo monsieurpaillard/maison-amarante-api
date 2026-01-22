@@ -522,13 +522,14 @@
                     const p = data.pennylane || {};
                     const c = data.clients || {};
                     const totalCartes = (p.quotes_synced || 0) + (p.factures_synced || 0) + (p.subscriptions_synced || 0) + (p.essais_synced || 0) + (p.a_livrer_synced || 0);
+                    const totalClients = (c.clients_created || 0) + (c.clients_updated || 0);
 
                     document.getElementById('syncStat1').textContent = totalCartes;
-                    document.getElementById('syncLabel1').textContent = 'Cartes Suivi';
-                    document.getElementById('syncStat2').textContent = c.clients_created || 0;
-                    document.getElementById('syncLabel2').textContent = 'Clients créés';
-                    document.getElementById('syncStat3').textContent = c.notes_parsed || 0;
-                    document.getElementById('syncLabel3').textContent = '🤖 Notes IA';
+                    document.getElementById('syncLabel1').textContent = 'Cartes créées';
+                    document.getElementById('syncStat2').textContent = totalClients;
+                    document.getElementById('syncLabel2').textContent = 'Clients traités';
+                    document.getElementById('syncStat3').textContent = c.clients_created || 0;
+                    document.getElementById('syncLabel3').textContent = 'Nouveaux';
                     document.getElementById('syncStat4').textContent = c.livraisons_created || 0;
                     document.getElementById('syncLabel4').textContent = 'Livraisons';
                 } else {
