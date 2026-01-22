@@ -326,18 +326,6 @@
             <div class="error" id="syncError"></div>
         </div>
         
-        <div class="card">
-            <h3>🧪 Sync Pennylane (SANDBOX)</h3>
-            <p>⚠️ Mode test : utilise des données fake, pas le vrai Pennylane</p>
-            <button class="btn btn-warning" id="syncPennylaneBtn">Sync Fake Pennylane</button>
-        </div>
-        
-        <div class="card">
-            <h3>👥 Sync Clients uniquement</h3>
-            <p>Met à jour les clients depuis Suivi Facturation</p>
-            <button class="btn btn-success" id="syncClientsBtn">Sync Clients</button>
-        </div>
-
         <div class="card" style="border: 2px solid #e74c3c;">
             <h3>🗑️ Cleanup Test Data</h3>
             <p>Supprime toutes les données TEST et FAKE des bases Airtable</p>
@@ -506,8 +494,6 @@
         
         // Sync
         const syncAllBtn = document.getElementById('syncAllBtn');
-        const syncPennylaneBtn = document.getElementById('syncPennylaneBtn');
-        const syncClientsBtn = document.getElementById('syncClientsBtn');
         const syncLoading = document.getElementById('syncLoading');
         const syncResults = document.getElementById('syncResults');
         const syncError = document.getElementById('syncError');
@@ -529,30 +515,33 @@
                 }
                 
                 // Extraire les stats selon le type de réponse
-                const isPennylaneSync = data.quotes_synced !== undefined;
+                const isCombinedSync = data.pennylane !== undefined && data.clients !== undefined;
 
-                if (isPennylaneSync) {
-                    // Stats Pennylane (cartes créées dans Suivi Facturation)
-                    const totalCartes = (data.quotes_synced || 0) + (data.invoices_synced || 0) + (data.factures_synced || 0) + (data.subscriptions_synced || 0) + (data.essais_synced || 0) + (data.a_livrer_synced || 0);
+                if (isCombinedSync) {
+                    // Sync complète (Pennylane + Clients)
+                    const p = data.pennylane || {};
+                    const c = data.clients || {};
+                    const totalCartes = (p.quotes_synced || 0) + (p.factures_synced || 0) + (p.subscriptions_synced || 0) + (p.essais_synced || 0) + (p.a_livrer_synced || 0);
+
                     document.getElementById('syncStat1').textContent = totalCartes;
-                    document.getElementById('syncLabel1').textContent = 'Total cartes';
-                    document.getElementById('syncStat2').textContent = (data.factures_synced || 0) + (data.subscriptions_synced || 0);
-                    document.getElementById('syncLabel2').textContent = 'Factures/Abos';
-                    document.getElementById('syncStat3').textContent = (data.essais_synced || 0) + (data.a_livrer_synced || 0);
-                    document.getElementById('syncLabel3').textContent = 'Essais/À livrer';
-                    document.getElementById('syncStat4').textContent = data.quotes_synced || 0;
-                    document.getElementById('syncLabel4').textContent = 'Devis';
+                    document.getElementById('syncLabel1').textContent = 'Cartes Suivi';
+                    document.getElementById('syncStat2').textContent = c.clients_created || 0;
+                    document.getElementById('syncLabel2').textContent = 'Clients créés';
+                    document.getElementById('syncStat3').textContent = c.notes_parsed || 0;
+                    document.getElementById('syncLabel3').textContent = '🤖 Notes IA';
+                    document.getElementById('syncStat4').textContent = c.livraisons_created || 0;
+                    document.getElementById('syncLabel4').textContent = 'Livraisons';
                 } else {
-                    // Stats Clients (clients créés/mis à jour)
+                    // Stats simples (fallback)
                     const clients = data.clients || data;
                     document.getElementById('syncStat1').textContent = clients.clients_created || 0;
                     document.getElementById('syncLabel1').textContent = 'Clients créés';
                     document.getElementById('syncStat2').textContent = clients.clients_updated || 0;
                     document.getElementById('syncLabel2').textContent = 'Mis à jour';
-                    document.getElementById('syncStat3').textContent = clients.livraisons_created || 0;
-                    document.getElementById('syncLabel3').textContent = 'Livraisons';
-                    document.getElementById('syncStat4').textContent = clients.notes_parsed || 0;
-                    document.getElementById('syncLabel4').textContent = '🤖 Notes IA';
+                    document.getElementById('syncStat3').textContent = clients.notes_parsed || 0;
+                    document.getElementById('syncLabel3').textContent = '🤖 Notes IA';
+                    document.getElementById('syncStat4').textContent = clients.livraisons_created || 0;
+                    document.getElementById('syncLabel4').textContent = 'Livraisons';
                 }
                 
                 const details = data.total_details || data.details || (data.clients && data.clients.details) || [];
@@ -573,9 +562,6 @@
         
         // TODO: Remettre '/api/sync' quand la sandbox n'est plus nécessaire
         syncAllBtn.addEventListener('click', () => doSync('/api/test/sync-all', syncAllBtn));
-        // TODO: Remettre '/api/sync/pennylane' quand la sandbox n'est plus nécessaire
-        syncPennylaneBtn.addEventListener('click', () => doSync('/api/test/fake-pennylane', syncPennylaneBtn));
-        syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn));
 
         // Cleanup
         const cleanupBtn = document.getElementById('cleanupBtn');
