@@ -491,16 +491,16 @@ def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
         for c in clients_with_notes
     ])
 
-    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients et extrais les informations structurées pour chacun.
+    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients et extrais les informations structurées.
 
 {clients_text}
 
 ---
 
-Réponds UNIQUEMENT en JSON valide. Le format doit être un objet avec le nom du client comme clé:
+Réponds UNIQUEMENT en JSON valide avec le NOM EXACT du client comme clé (garde le nom tel quel, y compris "FAKE", "TEST", etc.):
 
 {{
-    "NOM CLIENT 1": {{
+    "NOM EXACT CLIENT 1": {{
         "persona": "type",
         "frequence": "fréquence",
         "nb_bouquets": nombre,
@@ -510,23 +510,16 @@ Réponds UNIQUEMENT en JSON valide. Le format doit être un objet avec le nom du
         "creneau_prefere": "jour/moment",
         "adresse": "adresse complète",
         "instructions_speciales": "autres infos"
-    }},
-    "NOM CLIENT 2": {{ ... }}
+    }}
 }}
 
-Valeurs possibles:
-- persona: Coiffeur, Bureau, Hôtel, Restaurant, Retail, Spa, Galerie, Clinique, Autre
+Valeurs:
+- persona: Coiffeur, Bureau, Hôtel, Restaurant, Retail, Spa, Galerie, Clinique
 - frequence: Hebdomadaire, Bimensuel, Mensuel, Ponctuel
-- tailles: S (petit), M (moyen), L (grand), XL (très grand)
-- pref_couleurs: Rouge, Blanc, Rose, Vert, Jaune, Orange, Violet, Bleu, Noir, Neutre, Pastel
-- pref_style: Classique, Moderne, Zen, Champêtre, Luxe, Coloré, Créatif
-- creneau_prefere: Lundi, Mardi, Mercredi, Jeudi, Vendredi, Matin, Après-midi, ou horaire spécifique
+- tailles: S, M, L, XL
+- pref_style: Classique, Moderne, Zen, Champêtre, Luxe, Coloré
 
-Important:
-- Extrais UNIQUEMENT ce qui est explicitement mentionné
-- Pour nb_bouquets, compte le total mentionné
-- Pour l'adresse, inclus rue + code postal + ville
-- Déduis le persona du type d'établissement (Salon coiffure → Coiffeur, Hôtel → Hôtel, etc.)"""
+IMPORTANT: Utilise le NOM EXACT après ### comme clé JSON (ex: si "### FAKE Hôtel Paris" → clé = "FAKE Hôtel Paris")
 
     print(f"[PARSE] Parsing {len(clients_with_notes)} clients en batch...")
 
@@ -1229,32 +1222,18 @@ def api_test_parse_debug():
     ])
     debug_info["prompt_preview"] = clients_text[:300]
 
-    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients et extrais les informations structurées pour chacun.
+    prompt = f"""Analyse les notes de ces {len(clients_with_notes)} clients.
 
 {clients_text}
 
 ---
 
-Réponds UNIQUEMENT en JSON valide. Le format doit être un objet avec le nom du client comme clé:
-
+JSON avec NOM EXACT après ### comme clé:
 {{
-    "NOM CLIENT 1": {{
-        "persona": "type",
-        "frequence": "fréquence",
-        "nb_bouquets": nombre,
-        "tailles": ["S", "M", "L" ou "XL"],
-        "pref_couleurs": ["couleur1"],
-        "pref_style": "style",
-        "creneau_prefere": "jour/moment",
-        "adresse": "adresse complète",
-        "instructions_speciales": "autres infos"
-    }}
+    "NOM EXACT": {{"persona":"type","frequence":"freq","nb_bouquets":N,"tailles":["S/M/L/XL"],"pref_couleurs":["couleur"],"pref_style":"style","creneau_prefere":"jour","adresse":"adresse","instructions_speciales":"notes"}}
 }}
 
-Important:
-- Extrais UNIQUEMENT ce qui est explicitement mentionné
-- Pour nb_bouquets, compte le total mentionné
-- Pour l'adresse, inclus rue + code postal + ville"""
+IMPORTANT: Garde le nom tel quel (ex: "Test Hôtel Paris" → clé = "Test Hôtel Paris")"""
 
     debug_info["prompt_length"] = len(prompt)
 
