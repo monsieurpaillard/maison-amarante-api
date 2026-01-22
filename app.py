@@ -1090,10 +1090,11 @@ def health():
 
 @app.route("/api/test/cleanup", methods=["POST"])
 def api_test_cleanup():
-    """Supprime toutes les cartes de test (TEST et FAKE)"""
-    cards = get_suivi_cards()
-    deleted = 0
+    """Supprime toutes les données de test (TEST et FAKE) dans Suivi + Clients"""
+    results = {"suivi_deleted": 0, "clients_deleted": 0}
 
+    # 1. Cleanup Suivi Facturation
+    cards = get_suivi_cards()
     for card in cards:
         name = card.get("fields", {}).get("Nom du Client", "")
         pennylane_id = card.get("fields", {}).get("ID Pennylane", "")
@@ -1102,9 +1103,21 @@ def api_test_cleanup():
             url = f"https://api.airtable.com/v0/{SUIVI_BASE_ID}/{SUIVI_TABLE_ID}/{record_id}"
             response = req.delete(url, headers=get_airtable_headers())
             if response.status_code == 200:
-                deleted += 1
+                results["suivi_deleted"] += 1
 
-    return jsonify({"deleted": deleted})
+    # 2. Cleanup Clients (Maison Amarante DB)
+    _, _, all_clients = get_existing_clients()
+    for client in all_clients:
+        name = client.get("fields", {}).get("Nom", "")
+        if name.startswith("TEST ") or name.startswith("FAKE "):
+            record_id = client["id"]
+            url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CLIENTS_TABLE}/{record_id}"
+            response = req.delete(url, headers=get_airtable_headers())
+            if response.status_code == 200:
+                results["clients_deleted"] += 1
+
+    results["deleted"] = results["suivi_deleted"] + results["clients_deleted"]
+    return jsonify(results)
 
 
 @app.route("/api/test/fake-pennylane", methods=["POST"])

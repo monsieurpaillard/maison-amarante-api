@@ -585,7 +585,7 @@
             try {
                 const response = await fetch('/api/test/cleanup', { method: 'POST' });
                 const data = await response.json();
-                cleanupResult.innerHTML = `<span style="color: #27ae60;">✅ ${data.deleted} cartes supprimées</span>`;
+                cleanupResult.innerHTML = `<span style="color: #27ae60;">✅ ${data.suivi_deleted || 0} cartes Suivi + ${data.clients_deleted || 0} clients supprimés</span>`;
                 cleanupResult.style.display = 'block';
             } catch (err) {
                 cleanupResult.innerHTML = `<span style="color: #e74c3c;">❌ Erreur: ${err.message}</span>`;
