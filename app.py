@@ -1606,7 +1606,7 @@ def api_parse_clients():
                 continue
 
             update_fields = {}
-            # Seulement les champs texte libres pour éviter les erreurs Airtable
+            # Champs texte libres
             if parsed.get("adresse"):
                 update_fields["Adresse"] = parsed["adresse"]
             if parsed.get("creneau_prefere"):
@@ -1615,6 +1615,33 @@ def api_parse_clients():
                 update_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
             if parsed.get("nb_bouquets"):
                 update_fields["Nb_Bouquets"] = int(parsed["nb_bouquets"])
+
+            # Couleurs - multi-select, mapper vers valeurs valides
+            couleurs_valides = ["Rouge", "Blanc", "Rose", "Vert", "Jaune", "Orange", "Violet", "Bleu", "Noir"]
+            if parsed.get("pref_couleurs"):
+                couleurs = parsed["pref_couleurs"]
+                if isinstance(couleurs, str):
+                    couleurs = [c.strip() for c in couleurs.split(",")]
+                mapped_couleurs = [c.capitalize() for c in couleurs if c.capitalize() in couleurs_valides]
+                if mapped_couleurs:
+                    update_fields["Pref_Couleurs"] = mapped_couleurs
+
+            # Style - single-select, mapper vers valeurs valides
+            styles_valides = ["Bucolique", "Zen", "Moderne", "Coloré", "Classique"]
+            style_mapping = {
+                "bucolique": "Bucolique", "champêtre": "Bucolique", "champetre": "Bucolique",
+                "zen": "Zen", "épuré": "Zen", "epure": "Zen", "apaisant": "Zen",
+                "moderne": "Moderne", "contemporain": "Moderne",
+                "coloré": "Coloré", "colore": "Coloré", "vif": "Coloré",
+                "classique": "Classique", "luxe": "Classique", "élégant": "Classique", "elegant": "Classique", "chic": "Classique"
+            }
+            if parsed.get("pref_style"):
+                style_raw = parsed["pref_style"].lower().strip()
+                # Chercher un match dans le mapping
+                for key, val in style_mapping.items():
+                    if key in style_raw:
+                        update_fields["Pref_Style"] = val
+                        break
 
             if not update_fields:
                 errors.append(f"{client_name}: no fields to update")
