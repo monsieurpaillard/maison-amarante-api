@@ -546,10 +546,16 @@ Important:
     )
 
     if response.status_code != 200:
-        print(f"[PARSE] Error: {response.text}")
+        print(f"[PARSE] Error: {response.status_code} - {response.text}")
         return {}
 
-    text = response.json()["content"][0]["text"].strip()
+    try:
+        text = response.json()["content"][0]["text"].strip()
+        print(f"[PARSE] Got response text ({len(text)} chars)")
+    except Exception as e:
+        print(f"[PARSE] Failed to extract text: {e}")
+        print(f"[PARSE] Raw response: {response.text[:500]}")
+        return {}
 
     # Nettoyer le JSON si wrapped dans des backticks
     if "```" in text:
@@ -1203,39 +1209,29 @@ def api_test_cleanup():
 
 @app.route("/api/test/parse-debug", methods=["POST"])
 def api_test_parse_debug():
-    """Debug endpoint pour tester le parsing Claude"""
+    """Debug endpoint pour tester le parsing Claude avec des vrais clients"""
+    # Test avec 3 clients
     test_clients = [
-        {"name": "Test Restaurant", "notes": "Livraison mardi. 2 bouquets M. Adresse: 10 rue de Paris, 75001 Paris"},
+        {"name": "Test Hôtel Paris", "notes": "Hebdomadaire. 3 bouquets L. Style classique. Adresse: 10 rue de Rivoli, 75001 Paris. Livraison lundi 8h"},
+        {"name": "Test Salon Coiffure", "notes": "2 bouquets S. Moderne coloré. Adresse: 25 avenue Mozart, 75016 Paris. Mardi matin"},
+        {"name": "Test Restaurant Bio", "notes": "Mensuel. 1 bouquet M champêtre. Adresse: 5 rue du Commerce, 75015 Paris"}
     ]
 
-    # Test direct de l'appel Claude
-    prompt = "Réponds juste avec le JSON: {\"test\": \"ok\"}"
-
     try:
-        response = req.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 100,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=30
-        )
+        # Test la fonction de parsing réelle
+        result = parse_all_clients_notes_with_claude(test_clients)
 
         return jsonify({
             "api_key_present": bool(ANTHROPIC_API_KEY),
-            "api_key_prefix": ANTHROPIC_API_KEY[:10] + "..." if ANTHROPIC_API_KEY else None,
-            "status_code": response.status_code,
-            "response": response.text[:500] if response.status_code != 200 else response.json()
+            "test_clients_count": len(test_clients),
+            "parsed_count": len(result),
+            "parsed_data": result
         })
     except Exception as e:
+        import traceback
         return jsonify({
             "error": str(e),
+            "traceback": traceback.format_exc(),
             "api_key_present": bool(ANTHROPIC_API_KEY)
         })
 
