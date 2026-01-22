@@ -502,10 +502,10 @@ def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
     return all_parsed
 
 
-def _parse_batch_with_claude(clients_with_notes: list) -> dict:
+def _parse_batch_with_claude(clients_with_notes: list, debug=False) -> dict:
     """Parse un batch de clients (max 10) avec Claude"""
     if not clients_with_notes:
-        return {}
+        return {"_debug_error": "No clients with notes"} if debug else {}
 
     # Construire la liste des clients à parser
     clients_text = "\n\n".join([
@@ -562,17 +562,17 @@ IMPORTANT: Utilise le NOM EXACT après ### comme clé JSON (ex: si "### FAKE Hô
 
     if response.status_code != 200:
         print(f"[PARSE] Error: {response.status_code} - {response.text}")
-        return {}
+        return {"_debug_error": f"API error {response.status_code}", "_response": response.text[:300]} if debug else {}
 
     try:
         text = response.json()["content"][0]["text"].strip()
         print(f"[PARSE] Got response text ({len(text)} chars)")
     except Exception as e:
         print(f"[PARSE] Failed to extract text: {e}")
-        print(f"[PARSE] Raw response: {response.text[:500]}")
-        return {}
+        return {"_debug_error": f"Extract failed: {e}", "_response": response.text[:300]} if debug else {}
 
     # Nettoyer le JSON si wrapped dans des backticks
+    original_text = text
     if "```" in text:
         text = text.split("```")[1]
         if text.startswith("json"):
@@ -582,11 +582,12 @@ IMPORTANT: Utilise le NOM EXACT après ### comme clé JSON (ex: si "### FAKE Hô
     try:
         parsed = json.loads(text)
         print(f"[PARSE] Successfully parsed {len(parsed)} clients")
+        if debug:
+            parsed["_debug_raw"] = original_text[:200]
         return parsed
     except Exception as e:
         print(f"[PARSE] JSON parse failed: {e}")
-        print(f"[PARSE] Raw response: {text[:500]}...")
-        return {}
+        return {"_debug_error": f"JSON parse failed: {e}", "_raw_text": text[:500]} if debug else {}
 
 
 # ==================== SYNC LOGIC ====================
@@ -1237,17 +1238,17 @@ def api_test_parse_debug():
         {"name": "FAKE Restaurant Les Halles", "notes": "3 bouquets M tables. Couleurs chaudes (rouge, orange). Adresse: 15 rue Coquillière, 75001 Paris. Fermé dimanche. Livrer avant 11h"}
     ]
 
+    # Test direct de la fonction _parse_batch_with_claude
     try:
-        # Utilise la vraie fonction de parsing
-        result = parse_all_clients_notes_with_claude(test_clients)
+        batch_result = _parse_batch_with_claude(test_clients, debug=True)
 
         return jsonify({
             "test_clients": [c["name"] for c in test_clients],
-            "parsed_count": len(result),
-            "parsed_keys": list(result.keys()),
-            "parsed_data": result,
+            "batch_result_count": len(batch_result),
+            "batch_result_keys": list(batch_result.keys()),
+            "batch_result": batch_result,
             "match_test": {
-                name: name in result
+                name: name in batch_result
                 for name in [c["name"] for c in test_clients]
             }
         })
