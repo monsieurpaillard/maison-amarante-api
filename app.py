@@ -1148,66 +1148,133 @@ def api_test_fake_pennylane():
     """Simule une sync Pennylane avec des données fake (sans toucher au vrai Pennylane)"""
     import random
 
-    # Cartes directes (avec statut spécifique, pas via Pennylane)
-    direct_cards = [
-        {
-            "id": "FAKE-E001",
-            "name": "FAKE Salon Coiffure Élise",
-            "statut": "Essai gratuit",
-            "montant": 0,
-            "notes": "Premier essai offert. 2 petits bouquets S. Style bucolique, couleurs pastel (rose, blanc). Livraison mardi matin. Adresse: 8 rue des Martyrs, 75009 Paris. Contact: Élise 06 11 22 33 44"
-        },
-        {
-            "id": "FAKE-E002",
-            "name": "FAKE Cabinet Dentaire Sourire",
-            "statut": "Essai gratuit",
-            "montant": 0,
-            "notes": "Test 1 mois. 1 bouquet M pour salle d'attente. Tons apaisants (vert, blanc). Pas de fleurs odorantes. Livrer avant 9h. Adresse: 22 avenue Trudaine, 75009 Paris"
-        },
-        {
-            "id": "FAKE-L001",
-            "name": "FAKE Restaurant Chez Marcel",
-            "statut": "À livrer",
-            "montant": 180,
-            "notes": "Livraison urgente cette semaine. 3 bouquets M. Style classique, rouge et blanc. Adresse: 45 rue du Faubourg Saint-Antoine, 75011 Paris. Fermé le lundi. Contact: Marcel 01 43 55 66 77"
-        },
-        {
-            "id": "FAKE-L002",
-            "name": "FAKE Boutique Bijoux Luna",
-            "statut": "À livrer",
-            "montant": 95,
-            "notes": "Livraison vendredi après-midi uniquement. 1 bouquet S vitrine. Couleurs or/blanc. Style moderne épuré. Adresse: 15 rue de Rivoli, 75004 Paris. Interphone: 1234"
-        }
+    # 40 clients FAKE répartis géographiquement pour tester les tournées
+    # Statuts: Factures, Abonnements, Essai gratuit, À livrer (tous actifs)
+    fake_clients = [
+        # === PARIS CENTRE (75001-75004) - 6 clients ===
+        {"id": "FAKE-001", "name": "FAKE Hôtel du Louvre", "statut": "Abonnements", "montant": 450,
+         "notes": "Hebdomadaire. 4 bouquets XL hall + 2 M réception. Style classique luxe. Adresse: 2 place du Palais Royal, 75001 Paris. Livraison lundi 7h. Contact: Réception 01 44 58 38 38"},
+        {"id": "FAKE-002", "name": "FAKE Bijouterie Vendôme", "statut": "Factures", "montant": 180,
+         "notes": "Mensuel. 1 bouquet S vitrine. Tons or/blanc. Style épuré. Adresse: 24 place Vendôme, 75001 Paris. Livraison mardi matin"},
+        {"id": "FAKE-003", "name": "FAKE Restaurant Les Halles", "statut": "À livrer", "montant": 220,
+         "notes": "3 bouquets M tables. Couleurs chaudes (rouge, orange). Adresse: 15 rue Coquillière, 75001 Paris. Fermé dimanche. Livrer avant 11h"},
+        {"id": "FAKE-004", "name": "FAKE Galerie Beaubourg", "statut": "Abonnements", "montant": 380,
+         "notes": "Bimensuel. 2 bouquets XL contemporains. Couleurs neutres. Adresse: 8 rue Rambuteau, 75003 Paris. Accès code 4521"},
+        {"id": "FAKE-005", "name": "FAKE Café Le Marais", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Essai 1 mois. 2 bouquets S comptoir. Style champêtre coloré. Adresse: 38 rue des Archives, 75004 Paris. Contact: Julie 06 12 34 56 78"},
+        {"id": "FAKE-006", "name": "FAKE Boutique Saint-Paul", "statut": "Factures", "montant": 95,
+         "notes": "1 bouquet M entrée. Roses et pivoines. Adresse: 12 rue Saint-Paul, 75004 Paris. Livraison jeudi après-midi"},
+
+        # === PARIS RIVE GAUCHE (75005-75007) - 5 clients ===
+        {"id": "FAKE-007", "name": "FAKE Librairie Quartier Latin", "statut": "Abonnements", "montant": 120,
+         "notes": "Mensuel. 1 bouquet M. Style classique, tons bordeaux. Adresse: 34 boulevard Saint-Germain, 75005 Paris. Contact: Pierre 01 42 55 66 77"},
+        {"id": "FAKE-008", "name": "FAKE Restaurant Tour Eiffel", "statut": "Factures", "montant": 520,
+         "notes": "Hebdomadaire. 5 bouquets L tables. Élégant, blanc/vert. Adresse: 18 avenue de la Bourdonnais, 75007 Paris. Livrer mardi 10h"},
+        {"id": "FAKE-009", "name": "FAKE Cabinet Avocat Luxembourg", "statut": "Abonnements", "montant": 150,
+         "notes": "Bimensuel. 2 bouquets M. Sobre et élégant. Adresse: 5 rue de Médicis, 75006 Paris. Livraison mercredi matin"},
+        {"id": "FAKE-010", "name": "FAKE Spa Saint-Germain", "statut": "À livrer", "montant": 200,
+         "notes": "2 bouquets zen L. Blanc/vert apaisant. Pas de fleurs odorantes. Adresse: 42 rue du Bac, 75007 Paris. Livrer jeudi"},
+        {"id": "FAKE-011", "name": "FAKE Concept Store Odéon", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Test 2 semaines. 1 bouquet M moderne. Couleurs vives. Adresse: 9 carrefour de l'Odéon, 75006 Paris"},
+
+        # === PARIS OPÉRA/GRANDS BOULEVARDS (75008-75009) - 6 clients ===
+        {"id": "FAKE-012", "name": "FAKE Salon Coiffure Madeleine", "statut": "Abonnements", "montant": 180,
+         "notes": "Hebdomadaire. 2 bouquets S. Chic parisien. Adresse: 15 rue Tronchet, 75008 Paris. Mardi matin uniquement"},
+        {"id": "FAKE-013", "name": "FAKE Hôtel Opéra Grand", "statut": "Abonnements", "montant": 650,
+         "notes": "Hebdomadaire. 6 bouquets (2XL hall, 4M étages). Luxe classique. Adresse: 5 rue Scribe, 75009 Paris. Lundi 6h30"},
+        {"id": "FAKE-014", "name": "FAKE Clinique Esthétique Haussmann", "statut": "Factures", "montant": 175,
+         "notes": "3 bouquets S salles. Hypoallergénique. Blanc/rose. Adresse: 99 boulevard Haussmann, 75008 Paris. Avant 8h"},
+        {"id": "FAKE-015", "name": "FAKE Bureau Conseil Miromesnil", "statut": "Abonnements", "montant": 140,
+         "notes": "Bimensuel. 2 bouquets M. Corporate chic. Adresse: 28 rue de Miromesnil, 75008 Paris. Mercredi"},
+        {"id": "FAKE-016", "name": "FAKE Restaurant Pigalle", "statut": "À livrer", "montant": 160,
+         "notes": "2 bouquets M ambiance. Rouge/noir. Style moderne. Adresse: 52 rue des Martyrs, 75009 Paris. Fermé lundi"},
+        {"id": "FAKE-017", "name": "FAKE Théâtre Mogador", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Essai événement. 3 bouquets XL. Spectaculaire. Adresse: 25 rue de Mogador, 75009 Paris. Vendredi 14h"},
+
+        # === PARIS EST (75010-75012) - 6 clients ===
+        {"id": "FAKE-018", "name": "FAKE Hôtel Gare du Nord", "statut": "Abonnements", "montant": 320,
+         "notes": "Hebdomadaire. 3 bouquets L. Accueillant. Adresse: 12 rue de Dunkerque, 75010 Paris. Lundi matin"},
+        {"id": "FAKE-019", "name": "FAKE Salon Coiffure Canal", "statut": "Factures", "montant": 90,
+         "notes": "2 bouquets S. Bohème coloré. Adresse: 45 quai de Valmy, 75010 Paris. Mardi après-midi"},
+        {"id": "FAKE-020", "name": "FAKE Restaurant République", "statut": "À livrer", "montant": 240,
+         "notes": "4 bouquets M. Bistronomique, couleurs terre. Adresse: 3 avenue de la République, 75011 Paris. Jeudi 10h"},
+        {"id": "FAKE-021", "name": "FAKE Boutique Oberkampf", "statut": "Abonnements", "montant": 110,
+         "notes": "Mensuel. 1 bouquet M. Trendy coloré. Adresse: 78 rue Oberkampf, 75011 Paris. Vendredi"},
+        {"id": "FAKE-022", "name": "FAKE Café Bastille", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Test. 2 bouquets S comptoir. Champêtre. Adresse: 15 rue de la Roquette, 75011 Paris. Mercredi matin"},
+        {"id": "FAKE-023", "name": "FAKE Bureau Bercy", "statut": "Factures", "montant": 200,
+         "notes": "2 bouquets M accueil. Corporate. Adresse: 34 rue de Bercy, 75012 Paris. Mardi"},
+
+        # === PARIS RIVE DROITE NORD (75017-75018) - 5 clients ===
+        {"id": "FAKE-024", "name": "FAKE Restaurant Batignolles", "statut": "Abonnements", "montant": 180,
+         "notes": "Hebdomadaire. 2 bouquets M. Bistrot chic. Adresse: 22 rue des Batignolles, 75017 Paris. Mardi"},
+        {"id": "FAKE-025", "name": "FAKE Salon Coiffure Ternes", "statut": "Factures", "montant": 130,
+         "notes": "Bimensuel. 2 bouquets S. Élégant. Adresse: 8 avenue des Ternes, 75017 Paris. Lundi matin"},
+        {"id": "FAKE-026", "name": "FAKE Hôtel Montmartre", "statut": "À livrer", "montant": 280,
+         "notes": "3 bouquets L romantiques. Rose/blanc. Adresse: 5 rue Lepic, 75018 Paris. Livraison urgente"},
+        {"id": "FAKE-027", "name": "FAKE Café Abbesses", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Essai. 1 bouquet S. Artiste bohème. Adresse: 12 place des Abbesses, 75018 Paris. Jeudi"},
+        {"id": "FAKE-028", "name": "FAKE Galerie Art Brut", "statut": "Abonnements", "montant": 220,
+         "notes": "Mensuel. 2 bouquets L. Créatif original. Adresse: 45 rue Ordener, 75018 Paris. Mercredi après-midi"},
+
+        # === PARIS OUEST (75015-75016) - 5 clients ===
+        {"id": "FAKE-029", "name": "FAKE Clinique Auteuil", "statut": "Abonnements", "montant": 250,
+         "notes": "Hebdomadaire. 3 bouquets M. Apaisant. Adresse: 18 rue d'Auteuil, 75016 Paris. Lundi 8h"},
+        {"id": "FAKE-030", "name": "FAKE Restaurant Trocadéro", "statut": "Factures", "montant": 380,
+         "notes": "4 bouquets L. Gastronomique luxe. Adresse: 2 avenue d'Eylau, 75016 Paris. Mardi 10h"},
+        {"id": "FAKE-031", "name": "FAKE Bureau Passy", "statut": "À livrer", "montant": 150,
+         "notes": "2 bouquets M. Corporate élégant. Adresse: 35 rue de Passy, 75016 Paris. Cette semaine"},
+        {"id": "FAKE-032", "name": "FAKE Salon Institut Vaugirard", "statut": "Abonnements", "montant": 120,
+         "notes": "Bimensuel. 2 bouquets S. Cosy. Adresse: 120 rue de Vaugirard, 75015 Paris. Vendredi matin"},
+        {"id": "FAKE-033", "name": "FAKE Hôtel Porte Versailles", "statut": "Factures", "montant": 420,
+         "notes": "5 bouquets (1XL, 4M). Business. Adresse: 8 boulevard Victor, 75015 Paris. Lundi 7h"},
+
+        # === BANLIEUE OUEST (92) - 5 clients ===
+        {"id": "FAKE-034", "name": "FAKE Siège Social La Défense", "statut": "Abonnements", "montant": 580,
+         "notes": "Hebdomadaire. 6 bouquets L. Corporate prestige. Adresse: Tour First, 92400 Courbevoie. Lundi 7h30"},
+        {"id": "FAKE-035", "name": "FAKE Restaurant Neuilly", "statut": "Factures", "montant": 290,
+         "notes": "3 bouquets M. Chic discret. Adresse: 45 avenue Charles de Gaulle, 92200 Neuilly. Mardi"},
+        {"id": "FAKE-036", "name": "FAKE Salon Coiffure Boulogne", "statut": "À livrer", "montant": 100,
+         "notes": "2 bouquets S. Moderne. Adresse: 78 route de la Reine, 92100 Boulogne. Mercredi"},
+        {"id": "FAKE-037", "name": "FAKE Clinique Levallois", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Essai. 2 bouquets M. Zen. Adresse: 15 rue Rivay, 92300 Levallois. Jeudi matin"},
+        {"id": "FAKE-038", "name": "FAKE Bureau Issy", "statut": "Abonnements", "montant": 160,
+         "notes": "Bimensuel. 2 bouquets M. Startup friendly. Adresse: 42 rue Camille Desmoulins, 92130 Issy. Vendredi"},
+
+        # === BANLIEUE EST/NORD (93-94) - 4 clients ===
+        {"id": "FAKE-039", "name": "FAKE Studio Photo Montreuil", "statut": "Factures", "montant": 180,
+         "notes": "Ponctuel shooting. 4 bouquets variés. Créatif. Adresse: 25 rue de Paris, 93100 Montreuil. Mercredi"},
+        {"id": "FAKE-040", "name": "FAKE Restaurant Vincennes", "statut": "À livrer", "montant": 200,
+         "notes": "3 bouquets M. Terrasse nature. Vert dominant. Adresse: 8 avenue de Paris, 94300 Vincennes. Jeudi"},
+        {"id": "FAKE-041", "name": "FAKE Hôtel Roissy", "statut": "Abonnements", "montant": 350,
+         "notes": "Hebdomadaire. 4 bouquets M hall. International. Adresse: 2 allée du Verger, 93290 Tremblay. Lundi 6h"},
+        {"id": "FAKE-042", "name": "FAKE Spa Nogent", "statut": "Essai gratuit", "montant": 0,
+         "notes": "Test. 2 bouquets L zen. Bambou/orchidées. Adresse: 15 grande rue Charles de Gaulle, 94130 Nogent. Mardi"},
     ]
 
+    # Transformer en format attendu
+    direct_cards = [{"id": c["id"], "name": c["name"], "statut": c["statut"], "montant": c["montant"], "notes": c["notes"]} for c in fake_clients]
+
+    # Garder quelques devis (non actifs) pour tester le filtre
     fake_data = {
         "quotes": [
-            {"id": "FAKE-Q001", "label": "", "filename": "Devis-FAKE Librairie Voltaire-MAISON AMARANTE-D-2026-001.pdf", "amount": 180},
-            {"id": "FAKE-Q002", "label": "", "filename": "Devis-FAKE Restaurant Le Jardin-MAISON AMARANTE-D-2026-002.pdf", "amount": 320},
+            {"id": "FAKE-Q001", "label": "", "filename": "Devis-FAKE Fleuriste Concurrent-MAISON AMARANTE-D-2026-001.pdf", "amount": 180},
+            {"id": "FAKE-Q002", "label": "", "filename": "Devis-FAKE Prospect Indécis-MAISON AMARANTE-D-2026-002.pdf", "amount": 320},
         ],
-        "invoices": [
-            {"id": "FAKE-F001", "label": "Facture FAKE Spa Sérénité - F-2026-001", "amount": 250},
-            {"id": "FAKE-F002", "label": "Facture FAKE Galerie d'Art Moderne - F-2026-002", "amount": 450},
-            {"id": "FAKE-F003", "label": "Facture FAKE Clinique Beauté - F-2026-003", "amount": 175},
-        ],
-        "subscriptions": [
-            {"id": "FAKE-A001", "label": "", "filename": "Devis-FAKE Hôtel Le Marais-MAISON AMARANTE-A-2026-001.pdf"},
-            {"id": "FAKE-A002", "label": "", "filename": "Devis-FAKE Boutique Mode Paris-MAISON AMARANTE-A-2026-002.pdf"},
-        ]
+        "invoices": [],
+        "subscriptions": []
     }
 
-    # Notes variées pour tester le parsing (avec infos livraison complètes)
+    # Notes pour les devis
     fake_notes = {
-        "FAKE Librairie Voltaire": "Devis en attente. Style classique, tons bordeaux/or. 2 bouquets M. Adresse: 34 boulevard Saint-Germain, 75005 Paris. Contact: Pierre 01 42 55 66 77",
-        "FAKE Restaurant Le Jardin": "Devis terrasse. 4 bouquets M. Couleurs vives (orange, jaune). Pas de lys. Livraison jeudi. Adresse: 78 rue de Charonne, 75011 Paris",
-        "FAKE Spa Sérénité": "Livraison mercredi uniquement. 2 bouquets zen M, tons blancs et verts. Adresse: 12 rue de la Paix, 75002 Paris. Accès parking sous-sol",
-        "FAKE Galerie d'Art Moderne": "Bimensuel. 2 bouquets XL. Style contemporain, couleurs neutres (gris, blanc). Adresse: 5 rue de Thorigny, 75003 Paris. Accès par l'arrière-cour",
+        "FAKE Fleuriste Concurrent": "Devis en attente de validation. Adresse: 10 rue de la Paix, 75002 Paris",
+        "FAKE Prospect Indécis": "En réflexion. Adresse: 5 avenue Montaigne, 75008 Paris",
         "FAKE Clinique Beauté": "Hebdomadaire. 3 bouquets S. Hypoallergénique. Livrer avant 8h. Adresse: 99 avenue des Champs-Élysées, 75008 Paris. Interphone: 4521",
         "FAKE Hôtel Le Marais": "Abonnement premium. 5 bouquets/semaine (2L + 3M). Mix de styles. Adresse: 20 rue des Archives, 75004 Paris. Contact: Réception 01 44 55 66 77",
         "FAKE Boutique Mode Paris": "Mensuel. 2 bouquets M. Roses et pivoines. Fermé dimanche/lundi. Adresse: 67 rue du Faubourg Saint-Honoré, 75008 Paris",
     }
 
-    results = {"quotes_synced": 0, "invoices_synced": 0, "subscriptions_synced": 0, "essais_synced": 0, "a_livrer_synced": 0, "details": [], "errors": []}
+    results = {"quotes_synced": 0, "invoices_synced": 0, "subscriptions_synced": 0, "essais_synced": 0, "a_livrer_synced": 0, "factures_synced": 0, "details": [], "errors": []}
 
     # Check existing cards to avoid duplicates
     existing_cards = get_suivi_cards()
@@ -1286,12 +1353,19 @@ def api_test_fake_pennylane():
         }
         result = create_suivi_card(card_fields)
         if result["success"]:
-            if card["statut"] == "Essai gratuit":
+            statut = card["statut"]
+            if statut == "Essai gratuit":
                 results["essais_synced"] += 1
-                results["details"].append(f"🎁 Essai gratuit ajouté: {card['name']}")
-            else:
+                results["details"].append(f"🎁 Essai: {card['name']}")
+            elif statut == "À livrer":
                 results["a_livrer_synced"] += 1
-                results["details"].append(f"🚚 À livrer ajouté: {card['name']}")
+                results["details"].append(f"🚚 À livrer: {card['name']}")
+            elif statut == "Factures":
+                results["factures_synced"] += 1
+                results["details"].append(f"🧾 Facture: {card['name']}")
+            elif statut == "Abonnements":
+                results["subscriptions_synced"] += 1
+                results["details"].append(f"🔄 Abo: {card['name']}")
         else:
             results["errors"].append(f"❌ {card['name']}: {result['error']}")
 

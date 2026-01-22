@@ -533,14 +533,15 @@
 
                 if (isPennylaneSync) {
                     // Stats Pennylane (cartes créées dans Suivi Facturation)
-                    document.getElementById('syncStat1').textContent = data.quotes_synced || 0;
-                    document.getElementById('syncLabel1').textContent = 'Devis';
-                    document.getElementById('syncStat2').textContent = data.invoices_synced || 0;
-                    document.getElementById('syncLabel2').textContent = 'Factures';
+                    const totalCartes = (data.quotes_synced || 0) + (data.invoices_synced || 0) + (data.factures_synced || 0) + (data.subscriptions_synced || 0) + (data.essais_synced || 0) + (data.a_livrer_synced || 0);
+                    document.getElementById('syncStat1').textContent = totalCartes;
+                    document.getElementById('syncLabel1').textContent = 'Total cartes';
+                    document.getElementById('syncStat2').textContent = (data.factures_synced || 0) + (data.subscriptions_synced || 0);
+                    document.getElementById('syncLabel2').textContent = 'Factures/Abos';
                     document.getElementById('syncStat3').textContent = (data.essais_synced || 0) + (data.a_livrer_synced || 0);
                     document.getElementById('syncLabel3').textContent = 'Essais/À livrer';
-                    document.getElementById('syncStat4').textContent = data.subscriptions_synced || 0;
-                    document.getElementById('syncLabel4').textContent = 'Abonnements';
+                    document.getElementById('syncStat4').textContent = data.quotes_synced || 0;
+                    document.getElementById('syncLabel4').textContent = 'Devis';
                 } else {
                     // Stats Clients (clients créés/mis à jour)
                     const clients = data.clients || data;
