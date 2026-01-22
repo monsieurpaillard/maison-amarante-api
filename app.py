@@ -1206,15 +1206,38 @@ def api_test_parse_debug():
     """Debug endpoint pour tester le parsing Claude"""
     test_clients = [
         {"name": "Test Restaurant", "notes": "Livraison mardi. 2 bouquets M. Adresse: 10 rue de Paris, 75001 Paris"},
-        {"name": "Test Salon", "notes": "Hebdomadaire. Style zen. Couleurs blanc/vert. Adresse: 5 rue du Temple, 75003 Paris"}
     ]
 
-    result = parse_all_clients_notes_with_claude(test_clients)
-    return jsonify({
-        "input": test_clients,
-        "parsed": result,
-        "count": len(result)
-    })
+    # Test direct de l'appel Claude
+    prompt = "Réponds juste avec le JSON: {\"test\": \"ok\"}"
+
+    try:
+        response = req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=30
+        )
+
+        return jsonify({
+            "api_key_present": bool(ANTHROPIC_API_KEY),
+            "api_key_prefix": ANTHROPIC_API_KEY[:10] + "..." if ANTHROPIC_API_KEY else None,
+            "status_code": response.status_code,
+            "response": response.text[:500] if response.status_code != 200 else response.json()
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "api_key_present": bool(ANTHROPIC_API_KEY)
+        })
 
 
 @app.route("/api/test/sync-all", methods=["POST"])
