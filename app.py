@@ -485,8 +485,8 @@ def parse_all_clients_notes_with_claude(clients_data: list) -> dict:
     if not clients_with_notes:
         return {}
 
-    # Diviser en batches de 10
-    BATCH_SIZE = 10
+    # Batches de 8 clients
+    BATCH_SIZE = 8
     all_parsed = {}
 
     print(f"[PARSE] Total clients to parse: {len(clients_with_notes)} in {(len(clients_with_notes) + BATCH_SIZE - 1) // BATCH_SIZE} batches")
@@ -674,8 +674,12 @@ def sync_pennylane_to_suivi():
     return results
 
 
-def sync_suivi_to_clients():
-    """Synchronise Suivi Facturation → Maison Amarante DB (CLIENTS)"""
+def sync_suivi_to_clients(skip_parsing=False):
+    """Synchronise Suivi Facturation → Maison Amarante DB (CLIENTS)
+
+    Args:
+        skip_parsing: Si True, ne fait pas le parsing Claude (plus rapide)
+    """
     results = {
         "clients_created": 0,
         "clients_updated": 0,
@@ -692,8 +696,7 @@ def sync_suivi_to_clients():
     active_statuts = ["Factures", "Abonnements", "Essai gratuit", "À livrer"]
     inactive_statuts = ["Archives", "Abonnement arrêté", "Avoirs"]
 
-    # 1. Collecter tous les clients actifs avec leurs notes pour le batch parsing
-    clients_to_parse = []
+    # 1. Collecter tous les clients actifs
     active_cards = []
 
     for card in cards:
@@ -714,20 +717,17 @@ def sync_suivi_to_clients():
                 "notes": notes,
                 "pennylane_id": pennylane_id
             })
-            if notes.strip():
-                clients_to_parse.append({"name": client_name, "notes": notes})
 
-    # 2. Batch parsing avec Claude
+    # 2. Parsing désactivé par défaut (trop lent pour la sync)
     parsed_data = {}
-    if clients_to_parse:
-        results["details"].append(f"🤖 Parsing IA de {len(clients_to_parse)} notes...")
-        print(f"[SYNC] Sending {len(clients_to_parse)} clients to parse")
-        print(f"[SYNC] First client: {clients_to_parse[0]['name']}")
-        parsed_data = parse_all_clients_notes_with_claude(clients_to_parse)
-        results["notes_parsed"] = len(parsed_data)
-        print(f"[SYNC] Parsed data has {len(parsed_data)} keys")
-        if parsed_data:
-            print(f"[SYNC] First parsed key: {list(parsed_data.keys())[0]}")
+    if not skip_parsing:
+        clients_to_parse = [{"name": c["client_name"], "notes": c["notes"]} for c in active_cards if c["notes"].strip()]
+        if clients_to_parse:
+            results["details"].append(f"🤖 Parsing IA de {len(clients_to_parse)} notes...")
+            parsed_data = parse_all_clients_notes_with_claude(clients_to_parse)
+            results["notes_parsed"] = len(parsed_data)
+    else:
+        results["details"].append("⏭️ Parsing IA désactivé (utilisez /api/parse-clients)")
 
     # 3. Traiter chaque client avec les infos parsées
     for card_info in active_cards:
@@ -1262,7 +1262,8 @@ def api_test_parse_debug():
 
 @app.route("/api/test/sync-all", methods=["POST"])
 def api_test_sync_all():
-    """Synchronisation complète en mode sandbox (fake Pennylane + vrais clients)"""
+    """Synchronisation complète en mode sandbox (fake Pennylane + vrais clients)
+    Note: Le parsing IA est désactivé pour la rapidité. Utilisez /api/parse-clients séparément."""
     results = {
         "pennylane": {},
         "clients": {},
@@ -1275,8 +1276,8 @@ def api_test_sync_all():
     results["pennylane"] = fake_data
     results["total_details"].extend(fake_data.get("details", []))
 
-    # 2. Sync Suivi Facturation → CLIENTS
-    clients_results = sync_suivi_to_clients()
+    # 2. Sync Suivi Facturation → CLIENTS (sans parsing pour éviter timeout)
+    clients_results = sync_suivi_to_clients(skip_parsing=True)
     results["clients"] = clients_results
     results["total_details"].extend(clients_results.get("details", []))
 
@@ -1535,12 +1536,94 @@ def api_sync_pennylane():
 
 @app.route("/api/sync/clients", methods=["POST"])
 def api_sync_clients():
-    """Sync Suivi Facturation → Clients uniquement"""
+    """Sync Suivi Facturation → Clients (sans parsing IA pour la rapidité)"""
     try:
-        results = sync_suivi_to_clients()
+        results = sync_suivi_to_clients(skip_parsing=True)
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/parse-clients", methods=["POST"])
+def api_parse_clients():
+    """Parse les notes des clients avec Claude IA (endpoint séparé car lent)"""
+    try:
+        cards = get_suivi_cards()
+        clients_by_name, clients_by_pennylane, all_clients = get_existing_clients()
+
+        active_statuts = ["Factures", "Abonnements", "Essai gratuit", "À livrer"]
+
+        # Collecter les clients actifs avec notes
+        clients_to_parse = []
+        client_records = {}  # Pour retrouver le record à mettre à jour
+
+        for card in cards:
+            fields = card.get("fields", {})
+            client_name = fields.get("Nom du Client", "").strip()
+            statut = fields.get("Statut", "")
+            notes = fields.get("Notes", "")
+            pennylane_id = str(fields.get("ID Pennylane", ""))
+
+            if not client_name or statut not in active_statuts or not notes.strip():
+                continue
+
+            clients_to_parse.append({"name": client_name, "notes": notes})
+
+            # Trouver le client dans Airtable
+            existing = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
+            if existing:
+                client_records[client_name] = existing["id"]
+
+        if not clients_to_parse:
+            return jsonify({"message": "Aucun client à parser", "parsed": 0})
+
+        # Parser avec Claude
+        parsed_data = parse_all_clients_notes_with_claude(clients_to_parse)
+
+        # Mettre à jour les clients
+        updated = 0
+        for client_name, parsed in parsed_data.items():
+            if client_name.startswith("_"):  # Skip debug keys
+                continue
+            record_id = client_records.get(client_name)
+            if not record_id:
+                continue
+
+            update_fields = {}
+            if parsed.get("persona"):
+                update_fields["Persona"] = parsed["persona"]
+            if parsed.get("frequence"):
+                update_fields["Fréquence"] = parsed["frequence"]
+            if parsed.get("nb_bouquets"):
+                update_fields["Nb_Bouquets"] = parsed["nb_bouquets"]
+            if parsed.get("pref_couleurs"):
+                couleurs = parsed["pref_couleurs"]
+                update_fields["Pref_Couleurs"] = ", ".join(couleurs) if isinstance(couleurs, list) else couleurs
+            if parsed.get("pref_style"):
+                update_fields["Pref_Style"] = parsed["pref_style"]
+            if parsed.get("tailles"):
+                tailles = parsed["tailles"]
+                update_fields["Tailles_Demandées"] = ", ".join(tailles) if isinstance(tailles, list) else tailles
+            if parsed.get("creneau_prefere"):
+                update_fields["Créneau_Préféré"] = parsed["creneau_prefere"]
+            if parsed.get("adresse"):
+                update_fields["Adresse"] = parsed["adresse"]
+            if parsed.get("instructions_speciales"):
+                update_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
+
+            if update_fields:
+                result = update_client(record_id, update_fields)
+                if result["success"]:
+                    updated += 1
+
+        return jsonify({
+            "clients_to_parse": len(clients_to_parse),
+            "parsed": len([k for k in parsed_data.keys() if not k.startswith("_")]),
+            "updated": updated
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @app.route("/api/tournees", methods=["GET"])
