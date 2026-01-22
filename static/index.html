@@ -376,37 +376,35 @@
     <div id="dispatch" class="tab-content">
         <div class="card">
             <h3>💐 Dispatch des bouquets</h3>
-            <p>Suggère automatiquement quels bouquets envoyer à quels clients selon leurs préférences</p>
-            <button class="btn btn-primary" id="dispatchBtn">Générer les suggestions</button>
+            <p>Sélectionne une tournée pour préparer les bouquets</p>
+            <button class="btn btn-primary" id="loadTourneesBtn">Charger les tournées</button>
 
             <div class="loading" id="dispatchLoading">
                 <div class="spinner"></div>
-                <div>Calcul des matchs...</div>
-            </div>
-
-            <div id="dispatchResults" style="display: none;">
-                <div class="stats" style="grid-template-columns: repeat(3, 1fr);">
-                    <div class="stat-box">
-                        <div class="stat-number" id="dispatchClients">0</div>
-                        <div class="stat-label">Clients</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number" id="dispatchAssignes">0</div>
-                        <div class="stat-label">Assignés</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number" id="dispatchManquants">0</div>
-                        <div class="stat-label">Manquants</div>
-                    </div>
-                </div>
-                <p id="dispatchMessage" style="text-align: center; margin: 10px 0; color: #666; font-size: 0.9em;"></p>
+                <div id="dispatchLoadingText">Chargement...</div>
             </div>
 
             <div class="error" id="dispatchError"></div>
         </div>
 
-        <div id="dispatchList" style="display: none;"></div>
+        <!-- Liste des tournées -->
+        <div id="tourneeSelector" style="display: none;"></div>
 
+        <!-- Dispatch pour la tournée sélectionnée -->
+        <div id="dispatchContent" style="display: none;">
+            <div class="card" style="background: #f8f9fa;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h4 id="selectedTourneeTitle" style="margin: 0;"></h4>
+                        <p id="selectedTourneeInfo" style="margin: 5px 0 0; font-size: 0.9em; color: #666;"></p>
+                    </div>
+                    <button class="btn" id="backToTourneesBtn" style="background: #636e72; padding: 8px 15px;">Retour</button>
+                </div>
+            </div>
+            <div id="dispatchList"></div>
+        </div>
+
+        <!-- Données de test -->
         <div class="card" style="border: 2px dashed #6c5ce7; margin-top: 15px;">
             <h3>🧪 Données de test</h3>
             <p>Générer des bouquets fake pour tester le dispatch</p>
@@ -785,12 +783,15 @@
             }
         });
 
-        // Dispatch
-        const dispatchBtn = document.getElementById('dispatchBtn');
+        // Dispatch - Sélection par tournée
+        const loadTourneesBtn = document.getElementById('loadTourneesBtn');
         const dispatchLoading = document.getElementById('dispatchLoading');
-        const dispatchResults = document.getElementById('dispatchResults');
-        const dispatchList = document.getElementById('dispatchList');
+        const dispatchLoadingText = document.getElementById('dispatchLoadingText');
         const dispatchError = document.getElementById('dispatchError');
+        const tourneeSelector = document.getElementById('tourneeSelector');
+        const dispatchContent = document.getElementById('dispatchContent');
+        const dispatchList = document.getElementById('dispatchList');
+        const backToTourneesBtn = document.getElementById('backToTourneesBtn');
 
         // Couleurs pour les scores
         function getScoreColor(score) {
@@ -800,15 +801,20 @@
             return '#d63031';
         }
 
-        dispatchBtn.addEventListener('click', async () => {
-            dispatchBtn.disabled = true;
+        // Couleurs pour les tournées
+        const dispatchColors = ['#6c5ce7', '#00b894', '#e17055', '#0984e3', '#fdcb6e', '#e84393'];
+
+        // Charger la liste des tournées
+        loadTourneesBtn.addEventListener('click', async () => {
+            loadTourneesBtn.disabled = true;
             dispatchLoading.classList.add('show');
-            dispatchResults.style.display = 'none';
-            dispatchList.style.display = 'none';
+            dispatchLoadingText.textContent = 'Chargement des tournées...';
+            tourneeSelector.style.display = 'none';
+            dispatchContent.style.display = 'none';
             dispatchError.classList.remove('show');
 
             try {
-                const response = await fetch('/api/dispatch');
+                const response = await fetch('/api/dispatch/tournees');
                 const data = await response.json();
 
                 if (data.error) {
@@ -817,85 +823,199 @@
                     return;
                 }
 
-                if (!data.success) {
-                    dispatchError.textContent = data.message || 'Erreur inconnue';
-                    dispatchError.classList.add('show');
-                    return;
-                }
-
-                // Stats
-                const stats = data.stats || {};
-                document.getElementById('dispatchClients').textContent = stats.total_clients || 0;
-                document.getElementById('dispatchAssignes').textContent = stats.bouquets_assignes || 0;
-                document.getElementById('dispatchManquants').textContent = stats.bouquets_manquants || 0;
-                document.getElementById('dispatchMessage').textContent = data.message || '';
-
-                dispatchResults.style.display = 'block';
-
-                // Afficher les suggestions par client
-                const dispatch = data.dispatch || [];
-                if (dispatch.length === 0) {
-                    dispatchList.innerHTML = '<div class="card"><p>Aucune suggestion disponible.</p></div>';
+                const tournees = data.tournees || [];
+                if (tournees.length === 0) {
+                    tourneeSelector.innerHTML = '<div class="card"><p>Aucune tournée disponible. Synchronisez d\'abord les clients.</p></div>';
                 } else {
-                    dispatchList.innerHTML = dispatch.map(d => {
-                        const prefs = d.preferences || {};
-                        const bouquets = d.bouquets_suggeres || [];
-                        const isComplete = d.complet;
-                        const borderColor = isComplete ? '#00b894' : '#e17055';
-
+                    tourneeSelector.innerHTML = tournees.map((t, idx) => {
+                        const color = dispatchColors[idx % dispatchColors.length];
                         return `
-                            <div class="card" style="border-left: 4px solid ${borderColor}; margin-bottom: 15px;">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                    <div style="flex: 1;">
-                                        <h4 style="margin: 0 0 5px 0;">${d.client_nom}</h4>
-                                        <div style="font-size: 0.85em; color: #666;">
-                                            ${d.nb_suggeres}/${d.nb_demandes} bouquets ${isComplete ? '✅' : '⚠️'}
+                            <div class="card" style="border-left: 4px solid ${color}; margin-bottom: 10px; cursor: pointer;"
+                                 onclick="loadDispatchForTournee(${t.numero})"
+                                 onmouseover="this.style.background='#f8f9fa'"
+                                 onmouseout="this.style.background='white'">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <h4 style="margin: 0; color: ${color};">Tournée ${t.numero}</h4>
+                                        <div style="font-size: 0.85em; color: #666; margin-top: 4px;">
+                                            📅 ${t.jour} · ${t.nb_clients} clients · ${t.nb_bouquets} bouquets
+                                        </div>
+                                        <div style="font-size: 0.8em; color: #999; margin-top: 2px;">
+                                            ${t.zones?.join(', ') || ''}
                                         </div>
                                     </div>
+                                    <div style="font-size: 1.5em; color: #ccc;">›</div>
                                 </div>
-
-                                ${prefs.couleurs || prefs.style || prefs.tailles ? `
-                                    <div style="margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 6px; font-size: 0.85em;">
-                                        <strong>Préférences:</strong>
-                                        ${prefs.couleurs ? `<span style="margin-left: 8px;">🎨 ${prefs.couleurs}</span>` : ''}
-                                        ${prefs.style ? `<span style="margin-left: 8px;">✨ ${prefs.style}</span>` : ''}
-                                        ${prefs.tailles ? `<span style="margin-left: 8px;">📏 ${prefs.tailles}</span>` : ''}
-                                    </div>
-                                ` : ''}
-
-                                ${bouquets.length > 0 ? `
-                                    <div style="margin-top: 10px;">
-                                        ${bouquets.map((b, i) => `
-                                            <div style="display: flex; align-items: center; padding: 10px; margin: 5px 0; background: #fafafa; border-radius: 8px; border: 1px solid #eee;">
-                                                ${b.bouquet_photo ? `<img src="${b.bouquet_photo}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; margin-right: 12px;">` : '<div style="width: 50px; height: 50px; background: #ddd; border-radius: 6px; margin-right: 12px; display: flex; align-items: center; justify-content: center;">🌸</div>'}
-                                                <div style="flex: 1; min-width: 0;">
-                                                    <div style="font-weight: 600; font-size: 0.9em;">${b.bouquet_nom || b.bouquet_id}</div>
-                                                    <div style="font-size: 0.8em; color: #666;">
-                                                        ${b.bouquet_style || ''} · ${b.bouquet_taille || ''}
-                                                        ${Array.isArray(b.bouquet_couleurs) ? ' · ' + b.bouquet_couleurs.join(', ') : ''}
-                                                    </div>
-                                                    ${b.details && b.details.length > 0 ? `<div style="font-size: 0.75em; color: #999; margin-top: 2px;">Match: ${b.details.join(' · ')}</div>` : ''}
-                                                </div>
-                                                <div style="background: ${getScoreColor(b.score)}; color: white; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 0.85em;">
-                                                    ${b.score}%
-                                                </div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                ` : '<p style="color: #999; font-size: 0.9em; margin-top: 10px;">Aucun bouquet disponible correspondant</p>'}
                             </div>
                         `;
                     }).join('');
                 }
-                dispatchList.style.display = 'block';
+                tourneeSelector.style.display = 'block';
 
             } catch (err) {
                 dispatchError.textContent = 'Erreur: ' + err.message;
                 dispatchError.classList.add('show');
             } finally {
                 dispatchLoading.classList.remove('show');
-                dispatchBtn.disabled = false;
+                loadTourneesBtn.disabled = false;
             }
+        });
+
+        // Charger le dispatch pour une tournée
+        window.loadDispatchForTournee = async function(tourneeNum) {
+            dispatchLoading.classList.add('show');
+            dispatchLoadingText.textContent = `Calcul des suggestions pour la tournée ${tourneeNum}...`;
+            tourneeSelector.style.display = 'none';
+            dispatchError.classList.remove('show');
+
+            try {
+                const response = await fetch(`/api/dispatch/${tourneeNum}`);
+                const data = await response.json();
+
+                if (data.error || !data.success) {
+                    dispatchError.textContent = data.message || data.error || 'Erreur';
+                    dispatchError.classList.add('show');
+                    tourneeSelector.style.display = 'block';
+                    return;
+                }
+
+                const tournee = data.tournee || {};
+                const color = dispatchColors[(tourneeNum - 1) % dispatchColors.length];
+
+                document.getElementById('selectedTourneeTitle').innerHTML = `<span style="color: ${color};">Tournée ${tournee.numero}</span> - ${tournee.jour}`;
+                document.getElementById('selectedTourneeInfo').textContent = `${tournee.nb_clients} clients · ${tournee.nb_bouquets} bouquets · ${tournee.zones?.join(', ') || ''}`;
+
+                // Afficher les clients avec suggestions
+                const dispatch = data.dispatch || [];
+                if (dispatch.length === 0) {
+                    dispatchList.innerHTML = '<div class="card"><p>Aucun client dans cette tournée.</p></div>';
+                } else {
+                    dispatchList.innerHTML = dispatch.map((d, clientIdx) => {
+                        const prefs = d.preferences || {};
+                        const bouquets = d.bouquets_suggeres || [];
+                        const alternatives = d.alternatives || [];
+                        const isComplete = d.complet;
+
+                        return `
+                            <div class="card" style="margin-bottom: 15px;" id="client-${clientIdx}">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                                    <div>
+                                        <h4 style="margin: 0;">${d.client_nom}</h4>
+                                        <div style="font-size: 0.8em; color: #666;">${d.client_adresse || ''}</div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <span style="background: ${isComplete ? '#00b894' : '#e17055'}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 0.8em;">
+                                            ${d.nb_suggeres}/${d.nb_demandes}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                ${prefs.couleurs || prefs.style || prefs.tailles ? `
+                                    <div style="padding: 8px; background: #f0f0f0; border-radius: 6px; font-size: 0.8em; margin-bottom: 10px;">
+                                        ${prefs.couleurs ? `<span>🎨 ${prefs.couleurs}</span>` : ''}
+                                        ${prefs.style ? `<span style="margin-left: 10px;">✨ ${prefs.style}</span>` : ''}
+                                        ${prefs.tailles ? `<span style="margin-left: 10px;">📏 ${prefs.tailles}</span>` : ''}
+                                    </div>
+                                ` : ''}
+
+                                ${bouquets.length > 0 ? bouquets.map((b, bIdx) => `
+                                    <div style="display: flex; align-items: center; padding: 10px; margin: 8px 0; background: #fafafa; border-radius: 8px; border: 2px solid #e0e0e0;" id="suggestion-${clientIdx}-${bIdx}">
+                                        ${b.bouquet_photo ? `<img src="${b.bouquet_photo}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; margin-right: 12px;">` : '<div style="width: 60px; height: 60px; background: #ddd; border-radius: 8px; margin-right: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5em;">🌸</div>'}
+                                        <div style="flex: 1; min-width: 0;">
+                                            <div style="font-weight: 600;">${b.bouquet_nom || b.bouquet_id}</div>
+                                            <div style="font-size: 0.85em; color: #666;">
+                                                ${b.bouquet_style || ''} · ${b.bouquet_taille || ''}
+                                            </div>
+                                            <div style="font-size: 0.8em; color: #999;">
+                                                ${Array.isArray(b.bouquet_couleurs) ? b.bouquet_couleurs.join(', ') : ''}
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; flex-direction: column; gap: 5px; margin-left: 10px;">
+                                            <div style="background: ${getScoreColor(b.score)}; color: white; padding: 4px 10px; border-radius: 10px; font-weight: bold; font-size: 0.85em; text-align: center;">
+                                                ${b.score}%
+                                            </div>
+                                            <button onclick="validerBouquet('${d.client_id}', '${b.record_id}', ${clientIdx}, ${bIdx})"
+                                                    style="background: #00b894; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8em;">
+                                                ✓ Valider
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('') : '<p style="color: #999; font-size: 0.9em;">Aucun bouquet correspondant</p>'}
+
+                                ${alternatives.length > 0 ? `
+                                    <details style="margin-top: 8px;">
+                                        <summary style="cursor: pointer; color: #666; font-size: 0.85em;">Voir ${alternatives.length} alternative(s)</summary>
+                                        <div style="margin-top: 8px;">
+                                            ${alternatives.map((a, aIdx) => `
+                                                <div style="display: flex; align-items: center; padding: 8px; margin: 5px 0; background: #f5f5f5; border-radius: 6px; border: 1px dashed #ccc;">
+                                                    <div style="flex: 1;">
+                                                        <div style="font-size: 0.85em;">${a.bouquet_nom || a.bouquet_id}</div>
+                                                        <div style="font-size: 0.75em; color: #999;">${a.bouquet_style} · ${a.bouquet_taille}</div>
+                                                    </div>
+                                                    <span style="background: ${getScoreColor(a.score)}; color: white; padding: 2px 8px; border-radius: 8px; font-size: 0.75em;">${a.score}%</span>
+                                                    <button onclick="validerBouquet('${d.client_id}', '${a.record_id}', ${clientIdx}, 'alt-${aIdx}')"
+                                                            style="background: #636e72; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75em; margin-left: 8px;">
+                                                        Choisir
+                                                    </button>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </details>
+                                ` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                dispatchContent.style.display = 'block';
+
+            } catch (err) {
+                dispatchError.textContent = 'Erreur: ' + err.message;
+                dispatchError.classList.add('show');
+                tourneeSelector.style.display = 'block';
+            } finally {
+                dispatchLoading.classList.remove('show');
+            }
+        };
+
+        // Valider un bouquet
+        window.validerBouquet = async function(clientId, bouquetRecordId, clientIdx, bouquetIdx) {
+            const suggestionEl = document.getElementById(`suggestion-${clientIdx}-${bouquetIdx}`);
+            if (suggestionEl) {
+                suggestionEl.style.opacity = '0.5';
+            }
+
+            try {
+                const response = await fetch('/api/dispatch/valider', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_id: clientId, bouquet_record_id: bouquetRecordId })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    if (suggestionEl) {
+                        suggestionEl.style.border = '2px solid #00b894';
+                        suggestionEl.style.background = '#e8f8f5';
+                        suggestionEl.style.opacity = '1';
+                        suggestionEl.querySelector('button').textContent = '✓ Validé';
+                        suggestionEl.querySelector('button').disabled = true;
+                        suggestionEl.querySelector('button').style.background = '#b2bec3';
+                    }
+                } else {
+                    alert('Erreur: ' + (data.error || 'Validation impossible'));
+                    if (suggestionEl) suggestionEl.style.opacity = '1';
+                }
+            } catch (err) {
+                alert('Erreur: ' + err.message);
+                if (suggestionEl) suggestionEl.style.opacity = '1';
+            }
+        };
+
+        // Retour à la liste des tournées
+        backToTourneesBtn.addEventListener('click', () => {
+            dispatchContent.style.display = 'none';
+            tourneeSelector.style.display = 'block';
         });
 
         // Fake bouquets

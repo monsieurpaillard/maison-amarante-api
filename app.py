@@ -1279,67 +1279,50 @@ def calculate_match_score(bouquet: dict, client_prefs: dict) -> dict:
     }
 
 
-def dispatch_bouquets():
-    """Génère des suggestions de dispatch des bouquets vers les clients.
+def dispatch_for_tournee(tournee_num: int):
+    """Génère des suggestions de dispatch pour UNE tournée spécifique.
 
-    Algorithme:
-    1. Récupère les bouquets disponibles
-    2. Récupère les clients actifs avec leurs préférences
-    3. Pour chaque client, calcule le score de chaque bouquet
-    4. Suggère les N meilleurs bouquets (N = nb_bouquets du client)
+    Args:
+        tournee_num: numéro de la tournée (1, 2, 3...)
+
+    Returns:
+        Suggestions pour les clients de cette tournée uniquement
     """
+    # D'abord récupérer les tournées
+    tournees_data = prepare_tournees()
+    tournees = tournees_data.get("tournees", [])
+
+    if not tournees:
+        return {"success": False, "message": "Aucune tournée disponible"}
+
+    if tournee_num < 1 or tournee_num > len(tournees):
+        return {"success": False, "message": f"Tournée {tournee_num} inexistante (1-{len(tournees)})"}
+
+    # Récupérer la tournée demandée
+    tournee = tournees[tournee_num - 1]
+    clients_in_tournee = tournee.get("clients", [])
+
+    if not clients_in_tournee:
+        return {"success": False, "message": "Aucun client dans cette tournée"}
+
     # Récupérer les bouquets disponibles
     bouquets = get_available_bouquets()
     if not bouquets:
         return {
             "success": False,
             "message": "Aucun bouquet disponible",
+            "tournee": tournee,
             "dispatch": []
         }
 
-    # Récupérer les clients actifs
-    _, _, all_clients = get_existing_clients()
-
-    clients_to_dispatch = []
-    for client in all_clients:
-        fields = client.get("fields", {})
-
-        if not fields.get("Actif", False):
-            continue
-
-        # Ne prendre que les clients avec une adresse (donc livrable)
-        if not fields.get("Adresse", ""):
-            continue
-
-        clients_to_dispatch.append({
-            "id": client["id"],
-            "nom": fields.get("Nom", ""),
-            "nb_bouquets": fields.get("Nb_Bouquets", 1),
-            "pref_couleurs": fields.get("Pref_Couleurs", ""),
-            "pref_style": fields.get("Pref_Style", ""),
-            "tailles": fields.get("Tailles_Demandées", ""),
-            "notes": fields.get("Notes_Spéciales", ""),
-            "adresse": fields.get("Adresse", ""),
-        })
-
-    if not clients_to_dispatch:
-        return {
-            "success": False,
-            "message": "Aucun client actif à livrer",
-            "dispatch": []
-        }
-
-    # Pour chaque client, calculer les scores et suggérer les meilleurs bouquets
+    # Pour chaque client de la tournée, calculer les suggestions
     dispatch_results = []
-    assigned_bouquets = set()  # Pour éviter d'assigner le même bouquet à plusieurs clients
+    assigned_bouquets = set()
 
-    # Trier les clients par nombre de bouquets décroissant (les plus gros clients en premier)
-    clients_to_dispatch.sort(key=lambda c: c.get("nb_bouquets", 1), reverse=True)
-
-    for client in clients_to_dispatch:
+    for client in clients_in_tournee:
         nb_needed = client.get("nb_bouquets", 1)
 
-        # Calculer le score de chaque bouquet disponible (non encore assigné)
+        # Calculer le score de chaque bouquet disponible
         scored_bouquets = []
         for bouquet in bouquets:
             if bouquet["id"] in assigned_bouquets:
@@ -1355,46 +1338,95 @@ def dispatch_bouquets():
         # Trier par score décroissant
         scored_bouquets.sort(key=lambda x: x["score"], reverse=True)
 
-        # Prendre les N meilleurs
+        # Prendre les N meilleurs + 2 alternatives
         suggested = scored_bouquets[:nb_needed]
+        alternatives = scored_bouquets[nb_needed:nb_needed + 2]
 
-        # Marquer comme assignés
+        # Marquer les suggestions principales comme "réservées" (pas les alternatives)
         for s in suggested:
             assigned_bouquets.add(s["record_id"])
 
         dispatch_results.append({
-            "client_id": client["id"],
-            "client_nom": client["nom"],
-            "client_adresse": client["adresse"],
+            "client_id": client.get("id", ""),
+            "client_nom": client.get("nom", ""),
+            "client_adresse": client.get("adresse", ""),
             "nb_demandes": nb_needed,
             "nb_suggeres": len(suggested),
             "preferences": {
                 "couleurs": client.get("pref_couleurs", ""),
                 "style": client.get("pref_style", ""),
                 "tailles": client.get("tailles", ""),
-                "notes": client.get("notes", "")
             },
             "bouquets_suggeres": suggested,
-            "complet": len(suggested) >= nb_needed
+            "alternatives": alternatives,
+            "complet": len(suggested) >= nb_needed,
+            "valide": False  # À valider par l'utilisateur
         })
 
-    # Stats
-    total_needed = sum(c.get("nb_bouquets", 1) for c in clients_to_dispatch)
+    # Stats pour cette tournée
+    total_needed = sum(c.get("nb_bouquets", 1) for c in clients_in_tournee)
     total_suggested = sum(len(d["bouquets_suggeres"]) for d in dispatch_results)
-    clients_complets = sum(1 for d in dispatch_results if d["complet"])
 
     return {
         "success": True,
-        "message": f"{total_suggested}/{total_needed} bouquets assignés pour {len(clients_to_dispatch)} clients",
+        "tournee": {
+            "numero": tournee.get("numero"),
+            "jour": tournee.get("jour"),
+            "nb_clients": tournee.get("nb_clients"),
+            "nb_bouquets": tournee.get("nb_bouquets"),
+            "zones": tournee.get("zones"),
+        },
         "stats": {
-            "total_clients": len(clients_to_dispatch),
-            "clients_complets": clients_complets,
             "bouquets_disponibles": len(bouquets),
-            "bouquets_assignes": total_suggested,
             "bouquets_demandes": total_needed,
-            "bouquets_manquants": max(0, total_needed - len(bouquets))
+            "bouquets_suggeres": total_suggested,
         },
         "dispatch": dispatch_results
+    }
+
+
+def valider_dispatch(client_id: str, bouquet_record_id: str) -> dict:
+    """Valide l'assignation d'un bouquet à un client.
+
+    Met à jour le statut du bouquet dans Airtable.
+    """
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}/{bouquet_record_id}"
+    headers = get_airtable_headers()
+
+    # Mettre à jour le statut du bouquet
+    response = req.patch(url, headers=headers, json={
+        "fields": {
+            "Statut": "Assigné",
+            "Client_Assigné": client_id  # Lien vers le client
+        }
+    })
+
+    if response.status_code == 200:
+        return {"success": True, "message": "Bouquet assigné"}
+    else:
+        return {"success": False, "error": response.text}
+
+
+def get_tournees_summary():
+    """Retourne un résumé des tournées pour l'affichage."""
+    tournees_data = prepare_tournees()
+    tournees = tournees_data.get("tournees", [])
+
+    return {
+        "nb_tournees": len(tournees),
+        "total_clients": tournees_data.get("total_clients", 0),
+        "total_bouquets": tournees_data.get("total_bouquets", 0),
+        "tournees": [
+            {
+                "numero": t.get("numero"),
+                "jour": t.get("jour"),
+                "nb_clients": t.get("nb_clients"),
+                "nb_bouquets": t.get("nb_bouquets"),
+                "zones": t.get("zones"),
+                "duree_estimee": t.get("duree_estimee"),
+            }
+            for t in tournees
+        ]
     }
 
 
@@ -2196,15 +2228,43 @@ def api_tournees():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-@app.route("/api/dispatch", methods=["GET"])
-def api_dispatch():
-    """Génère des suggestions de dispatch des bouquets vers les clients"""
+@app.route("/api/dispatch/tournees", methods=["GET"])
+def api_dispatch_tournees():
+    """Retourne la liste des tournées pour le dispatch"""
     try:
-        results = dispatch_bouquets()
+        results = get_tournees_summary()
         return jsonify(results)
     except Exception as e:
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/dispatch/<int:tournee_num>", methods=["GET"])
+def api_dispatch_tournee(tournee_num):
+    """Génère des suggestions de dispatch pour une tournée spécifique"""
+    try:
+        results = dispatch_for_tournee(tournee_num)
+        return jsonify(results)
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/dispatch/valider", methods=["POST"])
+def api_dispatch_valider():
+    """Valide l'assignation d'un bouquet à un client"""
+    data = request.json
+    client_id = data.get("client_id")
+    bouquet_record_id = data.get("bouquet_record_id")
+
+    if not client_id or not bouquet_record_id:
+        return jsonify({"error": "client_id et bouquet_record_id requis"}), 400
+
+    try:
+        result = valider_dispatch(client_id, bouquet_record_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/facturer", methods=["POST"])
