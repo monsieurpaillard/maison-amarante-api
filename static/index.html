@@ -406,6 +406,16 @@
         </div>
 
         <div id="dispatchList" style="display: none;"></div>
+
+        <div class="card" style="border: 2px dashed #6c5ce7; margin-top: 15px;">
+            <h3>🧪 Données de test</h3>
+            <p>Générer des bouquets fake pour tester le dispatch</p>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-primary" id="fakeBouquetsBtn" style="flex: 1; min-width: 150px;">Créer 60 bouquets</button>
+                <button class="btn" id="cleanupBouquetsBtn" style="flex: 1; min-width: 150px; background: #e74c3c;">Supprimer FAKE</button>
+            </div>
+            <div id="fakeBouquetsResult" style="margin-top: 10px; display: none; font-size: 0.9em;"></div>
+        </div>
     </div>
 
     <!-- Liens Tab -->
@@ -885,6 +895,59 @@
             } finally {
                 dispatchLoading.classList.remove('show');
                 dispatchBtn.disabled = false;
+            }
+        });
+
+        // Fake bouquets
+        const fakeBouquetsBtn = document.getElementById('fakeBouquetsBtn');
+        const cleanupBouquetsBtn = document.getElementById('cleanupBouquetsBtn');
+        const fakeBouquetsResult = document.getElementById('fakeBouquetsResult');
+
+        fakeBouquetsBtn.addEventListener('click', async () => {
+            fakeBouquetsBtn.disabled = true;
+            cleanupBouquetsBtn.disabled = true;
+            fakeBouquetsResult.innerHTML = '<span style="color: #666;">Création en cours...</span>';
+            fakeBouquetsResult.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/test/fake-bouquets', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.error) {
+                    fakeBouquetsResult.innerHTML = `<span style="color: #e74c3c;">❌ ${data.error}</span>`;
+                } else {
+                    fakeBouquetsResult.innerHTML = `<span style="color: #00b894;">✅ ${data.message}</span>`;
+                }
+            } catch (err) {
+                fakeBouquetsResult.innerHTML = `<span style="color: #e74c3c;">❌ ${err.message}</span>`;
+            } finally {
+                fakeBouquetsBtn.disabled = false;
+                cleanupBouquetsBtn.disabled = false;
+            }
+        });
+
+        cleanupBouquetsBtn.addEventListener('click', async () => {
+            if (!confirm('Supprimer tous les bouquets FAKE ?')) return;
+
+            fakeBouquetsBtn.disabled = true;
+            cleanupBouquetsBtn.disabled = true;
+            fakeBouquetsResult.innerHTML = '<span style="color: #666;">Suppression en cours...</span>';
+            fakeBouquetsResult.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/test/cleanup-bouquets', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.error) {
+                    fakeBouquetsResult.innerHTML = `<span style="color: #e74c3c;">❌ ${data.error}</span>`;
+                } else {
+                    fakeBouquetsResult.innerHTML = `<span style="color: #00b894;">✅ ${data.message}</span>`;
+                }
+            } catch (err) {
+                fakeBouquetsResult.innerHTML = `<span style="color: #e74c3c;">❌ ${err.message}</span>`;
+            } finally {
+                fakeBouquetsBtn.disabled = false;
+                cleanupBouquetsBtn.disabled = false;
             }
         });
 

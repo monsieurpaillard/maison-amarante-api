@@ -1921,6 +1921,127 @@ def api_test_fake_pennylane():
     return jsonify(results)
 
 
+@app.route("/api/test/fake-bouquets", methods=["POST"])
+def api_test_fake_bouquets():
+    """Génère des bouquets fake pour tester le dispatch.
+
+    Crée ~60 bouquets variés avec différentes couleurs, styles et tailles
+    pour permettre de tester les matchs avec les préférences clients.
+    """
+    import random
+
+    # Définition des variations possibles
+    styles = ["Classique", "Moderne", "Zen", "Champêtre", "Luxe", "Coloré", "Romantique", "Bohème"]
+    tailles = ["Petit", "Moyen", "Grand", "Masterpiece"]
+    couleurs_possibles = [
+        ["Rouge", "Blanc"],
+        ["Rose", "Blanc"],
+        ["Blanc", "Vert"],
+        ["Rouge", "Orange"],
+        ["Violet", "Rose"],
+        ["Jaune", "Orange"],
+        ["Blanc", "Rose", "Vert"],
+        ["Rouge", "Bordeaux"],
+        ["Bleu", "Blanc"],
+        ["Rose", "Pêche"],
+        ["Vert", "Blanc", "Jaune"],
+        ["Rouge", "Blanc", "Rose"],
+        ["Orange", "Jaune", "Rouge"],
+        ["Violet", "Blanc"],
+        ["Rose", "Rouge"],
+    ]
+
+    # Noms de bouquets
+    noms_base = [
+        "Élégance", "Harmonie", "Sérénité", "Passion", "Douceur",
+        "Éclat", "Charme", "Prestige", "Nature", "Rêverie",
+        "Aurore", "Crépuscule", "Soleil", "Lune", "Étoile",
+        "Jardin", "Forêt", "Prairie", "Océan", "Montagne"
+    ]
+
+    # Générer les bouquets
+    fake_bouquets = []
+    for i in range(60):
+        style = random.choice(styles)
+        taille = random.choice(tailles)
+        couleurs = random.choice(couleurs_possibles)
+        nom_base = random.choice(noms_base)
+
+        fake_bouquets.append({
+            "nom": f"FAKE {nom_base} {style}",
+            "style": style,
+            "taille": taille,
+            "couleurs": couleurs
+        })
+
+    # Créer les bouquets dans Airtable
+    results = {"created": 0, "errors": [], "details": []}
+
+    # Vérifier les bouquets existants pour éviter les doublons
+    existing = get_available_bouquets()
+    existing_ids = {b.get("fields", {}).get("Bouquet_ID", "") for b in existing}
+
+    # Compter combien de FAKE bouquets existent déjà
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = get_airtable_headers()
+    response = req.get(url, headers=headers, params={"pageSize": 100})
+    all_bouquets = response.json().get("records", []) if response.status_code == 200 else []
+    fake_count = sum(1 for b in all_bouquets if b.get("fields", {}).get("Nom", "").startswith("FAKE"))
+
+    if fake_count >= 50:
+        return jsonify({
+            "message": f"Déjà {fake_count} bouquets FAKE existants. Utilisez cleanup d'abord.",
+            "created": 0
+        })
+
+    # Créer les nouveaux bouquets
+    for bouquet in fake_bouquets[:60 - fake_count]:  # Ne pas dépasser 60 au total
+        result = create_bouquet_in_airtable(bouquet)
+        if result.get("success"):
+            results["created"] += 1
+            results["details"].append(f"💐 {bouquet['nom']} ({bouquet['style']}, {bouquet['taille']})")
+        else:
+            results["errors"].append(result.get("error", "Unknown error")[:100])
+
+    results["message"] = f"{results['created']} bouquets créés"
+    return jsonify(results)
+
+
+@app.route("/api/test/cleanup-bouquets", methods=["POST"])
+def api_test_cleanup_bouquets():
+    """Supprime tous les bouquets FAKE"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
+    headers = get_airtable_headers()
+
+    # Récupérer tous les bouquets
+    all_records = []
+    offset = None
+    while True:
+        params = {"pageSize": 100}
+        if offset:
+            params["offset"] = offset
+        response = req.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            break
+        data = response.json()
+        all_records.extend(data.get("records", []))
+        offset = data.get("offset")
+        if not offset:
+            break
+
+    # Supprimer les FAKE
+    deleted = 0
+    for record in all_records:
+        nom = record.get("fields", {}).get("Nom", "")
+        if nom.startswith("FAKE "):
+            delete_url = f"{url}/{record['id']}"
+            resp = req.delete(delete_url, headers=headers)
+            if resp.status_code == 200:
+                deleted += 1
+
+    return jsonify({"deleted": deleted, "message": f"{deleted} bouquets FAKE supprimés"})
+
+
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
     """Synchronisation complète Pennylane → Suivi → Clients"""
