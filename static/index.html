@@ -36,8 +36,8 @@
             background: white;
             border-bottom: 1px solid #ddd;
             position: sticky;
-            top: 60px;
-            z-index: 99;
+            top: 113px;
+            z-index: 97;
             overflow-x: auto;
         }
         
@@ -248,13 +248,56 @@
         }
         
         .links a:hover { background: #e9ecef; }
+
+        /* Budget Banner */
+        .budget-banner {
+            background: white;
+            padding: 12px 20px;
+            border-bottom: 1px solid #eee;
+            position: sticky;
+            top: 60px;
+            z-index: 98;
+        }
+        .budget-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .budget-label { color: #636e72; }
+        .budget-value { font-weight: 600; color: #2d3436; }
+        .budget-bar {
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .budget-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s, background 0.3s;
+        }
+        .budget-fill.green { background: #27ae60; }
+        .budget-fill.orange { background: #f39c12; }
+        .budget-fill.red { background: #e74c3c; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🌸 Maison Amarante</h1>
     </div>
-    
+
+    <div class="budget-banner" id="budgetBanner">
+        <div class="budget-info">
+            <span class="budget-label">Budget livraisons</span>
+            <span class="budget-value" id="budgetText">Chargement...</span>
+        </div>
+        <div class="budget-bar">
+            <div class="budget-fill green" id="budgetFill" style="width: 0%"></div>
+        </div>
+    </div>
+
     <div class="tabs">
         <button class="tab active" data-tab="bouquet">📷 Bouquet</button>
         <button class="tab" data-tab="sync">🔄 Sync</button>
@@ -443,6 +486,34 @@
     </div>
     
     <script>
+        // Budget Banner - Charger au démarrage
+        async function loadBudget() {
+            try {
+                const response = await fetch('/api/budget');
+                const data = await response.json();
+
+                const budgetText = document.getElementById('budgetText');
+                const budgetFill = document.getElementById('budgetFill');
+
+                budgetText.textContent = `${data.budget_utilise}€ / ${data.budget_max}€ (${data.pourcentage}%)`;
+
+                budgetFill.style.width = Math.min(data.pourcentage, 100) + '%';
+
+                // Couleur selon le pourcentage
+                budgetFill.classList.remove('green', 'orange', 'red');
+                if (data.pourcentage < 70) {
+                    budgetFill.classList.add('green');
+                } else if (data.pourcentage < 90) {
+                    budgetFill.classList.add('orange');
+                } else {
+                    budgetFill.classList.add('red');
+                }
+            } catch (err) {
+                document.getElementById('budgetText').textContent = 'Erreur chargement';
+            }
+        }
+        loadBudget();
+
         // Tabs
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {

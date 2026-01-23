@@ -1804,6 +1804,57 @@ def health():
     return jsonify({"status": "ok", "service": "Maison Amarante API v4"})
 
 
+@app.route("/api/budget", methods=["GET"])
+def api_budget():
+    """Retourne le budget livraisons du mois en cours"""
+    # Constantes business
+    CA_MENSUEL = 12500  # À rendre éditable plus tard
+    BUDGET_PERCENT = 8  # 8% du CA
+    COUT_LIVRAISON = 15  # 15€ par livraison
+
+    budget_max = CA_MENSUEL * BUDGET_PERCENT / 100  # 1000€
+
+    # Compter les livraisons du mois en cours
+    now = datetime.now()
+    debut_mois = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    livraisons = get_livraisons()
+    livraisons_mois = 0
+
+    for liv in livraisons:
+        # Utiliser le champ Created d'Airtable ou Date si disponible
+        created = liv.get("createdTime", "")
+        date_liv = liv.get("fields", {}).get("Date", created)
+
+        if date_liv:
+            try:
+                # Parser la date (format ISO)
+                if "T" in str(date_liv):
+                    date_obj = datetime.fromisoformat(date_liv.replace("Z", "+00:00"))
+                else:
+                    date_obj = datetime.strptime(str(date_liv), "%Y-%m-%d")
+
+                # Vérifier si c'est dans le mois en cours
+                if date_obj.year == now.year and date_obj.month == now.month:
+                    livraisons_mois += 1
+            except (ValueError, TypeError):
+                pass
+
+    budget_utilise = livraisons_mois * COUT_LIVRAISON
+    reste = budget_max - budget_utilise
+    pourcentage = (budget_utilise / budget_max * 100) if budget_max > 0 else 0
+
+    return jsonify({
+        "ca_mensuel": CA_MENSUEL,
+        "budget_max": budget_max,
+        "budget_utilise": budget_utilise,
+        "livraisons_count": livraisons_mois,
+        "reste": reste,
+        "pourcentage": round(pourcentage, 1),
+        "cout_unitaire": COUT_LIVRAISON
+    })
+
+
 @app.route("/api/test/cleanup", methods=["POST"])
 def api_test_cleanup():
     """Supprime TOUTES les cartes Suivi Facturation + TOUS les clients (Airtable uniquement, ne touche PAS Pennylane)"""
