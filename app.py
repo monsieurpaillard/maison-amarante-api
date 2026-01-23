@@ -1829,6 +1829,39 @@ def api_test_parse_debug():
         })
 
 
+@app.route("/api/test/pennylane-structure", methods=["GET"])
+def api_test_pennylane_structure():
+    """Debug: Montre la structure des données Pennylane (devis, factures, abonnements)"""
+    result = {
+        "sample_quote": None,
+        "sample_invoice": None,
+        "sample_subscription": None,
+        "quote_fields": [],
+        "invoice_fields": [],
+        "subscription_fields": []
+    }
+
+    # Récupérer un devis
+    quotes = pennylane_get_quotes()
+    if quotes:
+        result["sample_quote"] = quotes[0]
+        result["quote_fields"] = list(quotes[0].keys())
+
+    # Récupérer une facture
+    invoices = pennylane_get_invoices()
+    if invoices:
+        result["sample_invoice"] = invoices[0]
+        result["invoice_fields"] = list(invoices[0].keys())
+
+    # Récupérer un abonnement
+    subs = pennylane_get_subscriptions()
+    if subs:
+        result["sample_subscription"] = subs[0]
+        result["subscription_fields"] = list(subs[0].keys())
+
+    return jsonify(result)
+
+
 @app.route("/api/test/sync-all", methods=["POST"])
 def api_test_sync_all():
     """Synchronisation complète en mode sandbox (fake Pennylane + vrais clients)
