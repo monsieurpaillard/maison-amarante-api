@@ -1804,55 +1804,89 @@ def health():
     return jsonify({"status": "ok", "service": "Maison Amarante API v4"})
 
 
+# Config budget (stockage simple en fichier)
+BUDGET_CONFIG_FILE = "/tmp/budget_config.json"
+BUDGET_PERCENT = 8  # 8% du CA
+COUT_LIVRAISON = 15  # 15€ par livraison
+
+def get_ca_mensuel():
+    """Récupère le CA mensuel depuis le fichier config"""
+    try:
+        with open(BUDGET_CONFIG_FILE, "r") as f:
+            config = json.load(f)
+            return config.get("ca_mensuel", 12500)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return 12500  # Valeur par défaut
+
+def set_ca_mensuel(ca):
+    """Sauvegarde le CA mensuel dans le fichier config"""
+    with open(BUDGET_CONFIG_FILE, "w") as f:
+        json.dump({"ca_mensuel": ca}, f)
+
+
 @app.route("/api/budget", methods=["GET"])
 def api_budget():
     """Retourne le budget livraisons du mois en cours"""
-    # Constantes business
-    CA_MENSUEL = 12500  # À rendre éditable plus tard
-    BUDGET_PERCENT = 8  # 8% du CA
-    COUT_LIVRAISON = 15  # 15€ par livraison
-
-    budget_max = CA_MENSUEL * BUDGET_PERCENT / 100  # 1000€
+    ca_mensuel = get_ca_mensuel()
+    budget_max = ca_mensuel * BUDGET_PERCENT / 100
 
     # Compter les livraisons du mois en cours
     now = datetime.now()
-    debut_mois = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
     livraisons = get_livraisons()
     livraisons_mois = 0
 
     for liv in livraisons:
-        # Utiliser le champ Created d'Airtable ou Date si disponible
         created = liv.get("createdTime", "")
         date_liv = liv.get("fields", {}).get("Date", created)
 
         if date_liv:
             try:
-                # Parser la date (format ISO)
                 if "T" in str(date_liv):
                     date_obj = datetime.fromisoformat(date_liv.replace("Z", "+00:00"))
                 else:
                     date_obj = datetime.strptime(str(date_liv), "%Y-%m-%d")
 
-                # Vérifier si c'est dans le mois en cours
                 if date_obj.year == now.year and date_obj.month == now.month:
                     livraisons_mois += 1
             except (ValueError, TypeError):
                 pass
 
     budget_utilise = livraisons_mois * COUT_LIVRAISON
-    reste = budget_max - budget_utilise
+    reste = max(0, budget_max - budget_utilise)
     pourcentage = (budget_utilise / budget_max * 100) if budget_max > 0 else 0
+    livraisons_max = int(budget_max / COUT_LIVRAISON)
+    livraisons_reste = max(0, livraisons_max - livraisons_mois)
 
     return jsonify({
-        "ca_mensuel": CA_MENSUEL,
+        "ca_mensuel": ca_mensuel,
         "budget_max": budget_max,
         "budget_utilise": budget_utilise,
         "livraisons_count": livraisons_mois,
+        "livraisons_max": livraisons_max,
+        "livraisons_reste": livraisons_reste,
         "reste": reste,
         "pourcentage": round(pourcentage, 1),
         "cout_unitaire": COUT_LIVRAISON
     })
+
+
+@app.route("/api/budget", methods=["POST"])
+def api_budget_update():
+    """Met à jour le CA mensuel"""
+    data = request.get_json() or {}
+    ca = data.get("ca_mensuel")
+
+    if ca is None:
+        return jsonify({"error": "ca_mensuel requis"}), 400
+
+    try:
+        ca = float(ca)
+        if ca < 0:
+            return jsonify({"error": "CA doit être positif"}), 400
+        set_ca_mensuel(ca)
+        return jsonify({"success": True, "ca_mensuel": ca})
+    except ValueError:
+        return jsonify({"error": "CA invalide"}), 400
 
 
 @app.route("/api/test/cleanup", methods=["POST"])

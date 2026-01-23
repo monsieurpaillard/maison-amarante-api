@@ -252,35 +252,47 @@
         /* Budget Banner */
         .budget-banner {
             background: white;
-            padding: 12px 20px;
+            padding: 15px 20px;
             border-bottom: 1px solid #eee;
             position: sticky;
             top: 60px;
             z-index: 98;
+            font-size: 13px;
         }
-        .budget-info {
+        .budget-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
-            font-size: 14px;
+            margin-bottom: 6px;
         }
+        .budget-row:last-of-type { margin-bottom: 10px; }
         .budget-label { color: #636e72; }
         .budget-value { font-weight: 600; color: #2d3436; }
-        .budget-bar {
-            height: 8px;
-            background: #eee;
+        .budget-value.editable {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
             border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+        .budget-value.editable:hover { border-color: #27ae60; }
+        .budget-livraisons { color: #636e72; font-weight: 400; }
+        .budget-bar {
+            height: 10px;
+            background: #eee;
+            border-radius: 5px;
             overflow: hidden;
+            margin-bottom: 6px;
         }
         .budget-fill {
             height: 100%;
-            border-radius: 4px;
+            border-radius: 5px;
             transition: width 0.3s, background 0.3s;
         }
         .budget-fill.green { background: #27ae60; }
         .budget-fill.orange { background: #f39c12; }
         .budget-fill.red { background: #e74c3c; }
+        .budget-percent { text-align: right; font-weight: 600; font-size: 12px; color: #636e72; }
     </style>
 </head>
 <body>
@@ -289,12 +301,28 @@
     </div>
 
     <div class="budget-banner" id="budgetBanner">
-        <div class="budget-info">
-            <span class="budget-label">Budget livraisons</span>
-            <span class="budget-value" id="budgetText">Chargement...</span>
+        <div class="budget-row">
+            <span class="budget-label">CA du mois</span>
+            <span><span class="budget-value editable" id="caInput" onclick="editCA()">12 500 €</span></span>
+        </div>
+        <div class="budget-row">
+            <span class="budget-label">Budget max (8%)</span>
+            <span class="budget-value" id="budgetMax">1 000 €</span>
+            <span class="budget-livraisons" id="livraisonsMax">→ 66 livraisons max</span>
+        </div>
+        <div class="budget-row">
+            <span class="budget-label">Planifié</span>
+            <span class="budget-value" id="budgetUtilise">0 €</span>
+            <span class="budget-livraisons" id="livraisonsCount">→ 0 livraisons</span>
         </div>
         <div class="budget-bar">
             <div class="budget-fill green" id="budgetFill" style="width: 0%"></div>
+        </div>
+        <div class="budget-row">
+            <span class="budget-label">Reste</span>
+            <span class="budget-value" id="budgetReste">1 000 €</span>
+            <span class="budget-livraisons" id="livraisonsReste">→ 66 livraisons</span>
+            <span class="budget-percent" id="budgetPercent">0%</span>
         </div>
     </div>
 
@@ -486,20 +514,27 @@
     </div>
     
     <script>
-        // Budget Banner - Charger au démarrage
+        // Budget Banner
+        function formatMoney(n) {
+            return n.toLocaleString('fr-FR') + ' €';
+        }
+
         async function loadBudget() {
             try {
                 const response = await fetch('/api/budget');
                 const data = await response.json();
 
-                const budgetText = document.getElementById('budgetText');
+                document.getElementById('caInput').textContent = formatMoney(data.ca_mensuel);
+                document.getElementById('budgetMax').textContent = formatMoney(data.budget_max);
+                document.getElementById('livraisonsMax').textContent = `→ ${data.livraisons_max} livraisons max`;
+                document.getElementById('budgetUtilise').textContent = formatMoney(data.budget_utilise);
+                document.getElementById('livraisonsCount').textContent = `→ ${data.livraisons_count} livraisons`;
+                document.getElementById('budgetReste').textContent = formatMoney(data.reste);
+                document.getElementById('livraisonsReste').textContent = `→ ${data.livraisons_reste} livraisons`;
+                document.getElementById('budgetPercent').textContent = data.pourcentage + '%';
+
                 const budgetFill = document.getElementById('budgetFill');
-
-                budgetText.textContent = `${data.budget_utilise}€ / ${data.budget_max}€ (${data.pourcentage}%)`;
-
                 budgetFill.style.width = Math.min(data.pourcentage, 100) + '%';
-
-                // Couleur selon le pourcentage
                 budgetFill.classList.remove('green', 'orange', 'red');
                 if (data.pourcentage < 70) {
                     budgetFill.classList.add('green');
@@ -509,9 +544,27 @@
                     budgetFill.classList.add('red');
                 }
             } catch (err) {
-                document.getElementById('budgetText').textContent = 'Erreur chargement';
+                console.error('Budget error:', err);
             }
         }
+
+        async function editCA() {
+            const current = document.getElementById('caInput').textContent.replace(/[^\d]/g, '');
+            const newCA = prompt('CA mensuel (€)', current);
+            if (newCA && !isNaN(newCA)) {
+                try {
+                    await fetch('/api/budget', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ca_mensuel: parseFloat(newCA) })
+                    });
+                    loadBudget();
+                } catch (err) {
+                    alert('Erreur: ' + err.message);
+                }
+            }
+        }
+
         loadBudget();
 
         // Tabs
