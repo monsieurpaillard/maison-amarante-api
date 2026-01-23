@@ -2250,6 +2250,20 @@ def api_parse_clients():
             if parsed.get("nb_bouquets"):
                 update_fields["Nb_Bouquets"] = int(parsed["nb_bouquets"])
 
+            # Fréquence et Persona
+            if parsed.get("frequence"):
+                update_fields["Fréquence"] = parsed["frequence"]
+            if parsed.get("persona"):
+                update_fields["Persona"] = parsed["persona"]
+
+            # Tailles
+            if parsed.get("tailles"):
+                tailles = parsed["tailles"]
+                if isinstance(tailles, list):
+                    update_fields["Tailles_Demandées"] = ", ".join(tailles)
+                else:
+                    update_fields["Tailles_Demandées"] = str(tailles)
+
             # Couleurs et Style - texte libre
             if parsed.get("pref_couleurs"):
                 couleurs = parsed["pref_couleurs"]
