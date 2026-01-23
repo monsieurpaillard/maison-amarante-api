@@ -36,7 +36,7 @@
             background: white;
             border-bottom: 1px solid #ddd;
             position: sticky;
-            top: 113px;
+            top: 60px;
             z-index: 97;
             overflow-x: auto;
         }
@@ -249,50 +249,47 @@
         
         .links a:hover { background: #e9ecef; }
 
-        /* Budget Banner */
+        /* Budget Banner - Compact */
         .budget-banner {
-            background: white;
-            padding: 15px 20px;
+            display: none;
+            background: #f8f9fa;
+            padding: 8px 15px;
             border-bottom: 1px solid #eee;
-            position: sticky;
-            top: 60px;
-            z-index: 98;
-            font-size: 13px;
+            font-size: 11px;
         }
-        .budget-row {
+        .budget-banner.visible { display: block; }
+        .budget-compact {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 6px;
+            gap: 15px;
+            flex-wrap: wrap;
         }
-        .budget-row:last-of-type { margin-bottom: 10px; }
+        .budget-item { display: flex; align-items: center; gap: 4px; }
         .budget-label { color: #636e72; }
         .budget-value { font-weight: 600; color: #2d3436; }
         .budget-value.editable {
-            background: #f8f9fa;
+            background: white;
             border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 2px 8px;
+            border-radius: 3px;
+            padding: 1px 5px;
             cursor: pointer;
         }
         .budget-value.editable:hover { border-color: #27ae60; }
-        .budget-livraisons { color: #636e72; font-weight: 400; }
-        .budget-bar {
-            height: 10px;
-            background: #eee;
-            border-radius: 5px;
+        .budget-bar-mini {
+            width: 80px;
+            height: 6px;
+            background: #ddd;
+            border-radius: 3px;
             overflow: hidden;
-            margin-bottom: 6px;
         }
         .budget-fill {
             height: 100%;
-            border-radius: 5px;
+            border-radius: 3px;
             transition: width 0.3s, background 0.3s;
         }
         .budget-fill.green { background: #27ae60; }
         .budget-fill.orange { background: #f39c12; }
         .budget-fill.red { background: #e74c3c; }
-        .budget-percent { text-align: right; font-weight: 600; font-size: 12px; color: #636e72; }
     </style>
 </head>
 <body>
@@ -301,28 +298,27 @@
     </div>
 
     <div class="budget-banner" id="budgetBanner">
-        <div class="budget-row">
-            <span class="budget-label">CA du mois</span>
-            <span><span class="budget-value editable" id="caInput" onclick="editCA()">12 500 €</span></span>
-        </div>
-        <div class="budget-row">
-            <span class="budget-label">Budget max (8%)</span>
-            <span class="budget-value" id="budgetMax">1 000 €</span>
-            <span class="budget-livraisons" id="livraisonsMax">→ 66 livraisons max</span>
-        </div>
-        <div class="budget-row">
-            <span class="budget-label">Planifié</span>
-            <span class="budget-value" id="budgetUtilise">0 €</span>
-            <span class="budget-livraisons" id="livraisonsCount">→ 0 livraisons</span>
-        </div>
-        <div class="budget-bar">
-            <div class="budget-fill green" id="budgetFill" style="width: 0%"></div>
-        </div>
-        <div class="budget-row">
-            <span class="budget-label">Reste</span>
-            <span class="budget-value" id="budgetReste">1 000 €</span>
-            <span class="budget-livraisons" id="livraisonsReste">→ 66 livraisons</span>
-            <span class="budget-percent" id="budgetPercent">0%</span>
+        <div class="budget-compact">
+            <div class="budget-item">
+                <span class="budget-label">CA:</span>
+                <span class="budget-value editable" id="caInput" onclick="editCA()">12 500 €</span>
+            </div>
+            <div class="budget-item">
+                <span class="budget-label">Utilisé:</span>
+                <span class="budget-value" id="budgetUtilise">0 €</span>
+                <span class="budget-label">/ <span id="budgetMax">1 000 €</span></span>
+            </div>
+            <div class="budget-item">
+                <div class="budget-bar-mini">
+                    <div class="budget-fill green" id="budgetFill" style="width: 0%"></div>
+                </div>
+                <span class="budget-value" id="budgetPercent">0%</span>
+            </div>
+            <div class="budget-item">
+                <span class="budget-label">Reste:</span>
+                <span class="budget-value" id="livraisonsReste">66</span>
+                <span class="budget-label">livraisons</span>
+            </div>
         </div>
     </div>
 
@@ -526,11 +522,8 @@
 
                 document.getElementById('caInput').textContent = formatMoney(data.ca_mensuel);
                 document.getElementById('budgetMax').textContent = formatMoney(data.budget_max);
-                document.getElementById('livraisonsMax').textContent = `→ ${data.livraisons_max} livraisons max`;
                 document.getElementById('budgetUtilise').textContent = formatMoney(data.budget_utilise);
-                document.getElementById('livraisonsCount').textContent = `→ ${data.livraisons_count} livraisons`;
-                document.getElementById('budgetReste').textContent = formatMoney(data.reste);
-                document.getElementById('livraisonsReste').textContent = `→ ${data.livraisons_reste} livraisons`;
+                document.getElementById('livraisonsReste').textContent = data.livraisons_reste;
                 document.getElementById('budgetPercent').textContent = data.pourcentage + '%';
 
                 const budgetFill = document.getElementById('budgetFill');
@@ -565,7 +558,15 @@
             }
         }
 
-        loadBudget();
+        function updateBudgetVisibility(tabName) {
+            const banner = document.getElementById('budgetBanner');
+            if (tabName === 'tournees' || tabName === 'dispatch') {
+                banner.classList.add('visible');
+                loadBudget();
+            } else {
+                banner.classList.remove('visible');
+            }
+        }
 
         // Tabs
         document.querySelectorAll('.tab').forEach(tab => {
@@ -574,6 +575,7 @@
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById(tab.dataset.tab).classList.add('active');
+                updateBudgetVisibility(tab.dataset.tab);
             });
         });
         
