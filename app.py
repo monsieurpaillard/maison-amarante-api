@@ -1558,15 +1558,55 @@ def get_bouquet_by_id(bouquet_id: str) -> dict:
     return None
 
 
+def normalize_taille(taille: str) -> str:
+    """Normalise la taille pour correspondre aux options Airtable."""
+    if not taille:
+        return "Moyen"
+    taille_lower = taille.lower().strip()
+    # Mapping des variations possibles
+    if any(x in taille_lower for x in ["petit", "small", "s"]):
+        return "Petit"
+    if any(x in taille_lower for x in ["moyen", "medium", "m", "normale"]):
+        return "Moyen"
+    if any(x in taille_lower for x in ["grand", "large", "l", "big"]):
+        return "Grand"
+    if any(x in taille_lower for x in ["master", "xl", "très grand", "enorme"]):
+        return "Masterpiece"
+    return "Moyen"  # Défaut
+
+
+def normalize_style(style: str) -> str:
+    """Normalise le style pour correspondre aux options Airtable."""
+    if not style:
+        return "Classique"
+    style_lower = style.lower().strip()
+    # Mapping des variations possibles
+    if any(x in style_lower for x in ["classique", "classic", "traditionnel"]):
+        return "Classique"
+    if any(x in style_lower for x in ["moderne", "modern", "contemporain"]):
+        return "Moderne"
+    if any(x in style_lower for x in ["zen", "minimaliste", "épuré"]):
+        return "Zen"
+    if any(x in style_lower for x in ["champêtre", "rustique", "campagne", "naturel"]):
+        return "Champêtre"
+    if any(x in style_lower for x in ["luxe", "luxueux", "premium", "prestige"]):
+        return "Luxe"
+    if any(x in style_lower for x in ["coloré", "vif", "multicolore"]):
+        return "Coloré"
+    if any(x in style_lower for x in ["romantique", "romantic", "doux"]):
+        return "Romantique"
+    if any(x in style_lower for x in ["bohème", "boho", "bohemian"]):
+        return "Bohème"
+    return "Classique"  # Défaut
+
+
 def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
     headers = get_airtable_headers()
 
     bouquet_id = get_next_bouquet_id()
-    # URL dynamique basée sur l'environnement
-    base_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "maison-amarante-api-production.up.railway.app")
-    if not base_url.startswith("http"):
-        base_url = f"https://{base_url}"
+    # URL fixe (Railway ne change pas)
+    base_url = "https://web-production-37db3.up.railway.app"
     public_url = f"{base_url}/b/{bouquet_id}"
     qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={public_url}"
 
@@ -1575,12 +1615,16 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     if isinstance(couleurs, str):
         couleurs = [c.strip() for c in couleurs.split(",")]
 
+    # Normaliser taille et style pour correspondre aux options Airtable
+    taille_raw = data.get("taille") or data.get("taille_suggeree") or "Moyen"
+    style_raw = data.get("style") or "Classique"
+
     fields = {
         "Bouquet_ID": bouquet_id,
-        "Nom": data.get("nom", f"Bouquet {data.get('style', '')}"),
-        "Taille": data.get("taille", data.get("taille_suggeree", "Moyen")),
+        "Nom": data.get("nom", f"Bouquet {style_raw}"),
+        "Taille": normalize_taille(taille_raw),
         "Couleurs": couleurs,
-        "Style": data.get("style", "Classique"),
+        "Style": normalize_style(style_raw),
         "Statut": "Disponible",
         "QR_Code_URL": public_url
     }
