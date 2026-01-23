@@ -1868,6 +1868,34 @@ def api_test_parse_debug():
         })
 
 
+@app.route("/api/test/pennylane-comments/<quote_id>", methods=["GET"])
+def api_test_pennylane_comments(quote_id):
+    """Debug: Essaie de récupérer les commentaires d'un devis Pennylane"""
+    headers = get_pennylane_headers()
+    results = {}
+
+    # Essayer plusieurs endpoints possibles
+    endpoints_to_try = [
+        f"{PENNYLANE_API_URL}/quotes/{quote_id}/comments",
+        f"{PENNYLANE_API_URL}/quotes/{quote_id}/notes",
+        f"{PENNYLANE_API_URL}/comments?quote_id={quote_id}",
+        f"{PENNYLANE_API_URL}/document_comments?document_id={quote_id}",
+        f"{PENNYLANE_API_URL}/notes?quote_id={quote_id}",
+    ]
+
+    for endpoint in endpoints_to_try:
+        try:
+            response = req.get(endpoint, headers=headers)
+            results[endpoint] = {
+                "status": response.status_code,
+                "body": response.json() if response.status_code == 200 else response.text[:500]
+            }
+        except Exception as e:
+            results[endpoint] = {"error": str(e)}
+
+    return jsonify(results)
+
+
 @app.route("/api/test/pennylane-structure", methods=["GET"])
 def api_test_pennylane_structure():
     """Debug: Montre la structure des données Pennylane (devis, factures, abonnements, customers)"""
