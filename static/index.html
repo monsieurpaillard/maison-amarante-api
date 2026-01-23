@@ -334,9 +334,9 @@
         </div>
         
         <div class="card" style="border: 2px solid #e74c3c;">
-            <h3>🗑️ Vider Suivi Facturation</h3>
-            <p>Supprime TOUTES les cartes de la table Suivi Facturation (Airtable uniquement, ne touche pas Pennylane)</p>
-            <button class="btn" style="background: #e74c3c;" id="cleanupBtn">Vider Suivi Facturation</button>
+            <h3>🗑️ Reset complet</h3>
+            <p>Supprime TOUTES les cartes Suivi Facturation + TOUS les clients (Airtable uniquement, ne touche pas Pennylane)</p>
+            <button class="btn" style="background: #e74c3c;" id="cleanupBtn">Vider Suivi + Clients</button>
             <div id="cleanupResult" style="margin-top: 10px; display: none;"></div>
         </div>
     </div>
@@ -687,17 +687,16 @@
         const cleanupBtn = document.getElementById('cleanupBtn');
         const cleanupResult = document.getElementById('cleanupResult');
         cleanupBtn.addEventListener('click', async () => {
-            if (!confirm('Supprimer toutes les données TEST et FAKE ?')) return;
+            if (!confirm('ATTENTION: Supprimer TOUTES les cartes Suivi Facturation + TOUS les clients ?\n\n(Pennylane ne sera pas touché)')) return;
             cleanupBtn.disabled = true;
-            cleanupResult.style.display = 'none';
+            cleanupResult.innerHTML = '<span style="color: #888;">Suppression en cours...</span>';
+            cleanupResult.style.display = 'block';
             try {
                 const response = await fetch('/api/test/cleanup', { method: 'POST' });
                 const data = await response.json();
                 cleanupResult.innerHTML = `<span style="color: #27ae60;">✅ ${data.suivi_deleted || 0} cartes Suivi + ${data.clients_deleted || 0} clients supprimés</span>`;
-                cleanupResult.style.display = 'block';
             } catch (err) {
                 cleanupResult.innerHTML = `<span style="color: #e74c3c;">❌ Erreur: ${err.message}</span>`;
-                cleanupResult.style.display = 'block';
             } finally {
                 cleanupBtn.disabled = false;
             }
