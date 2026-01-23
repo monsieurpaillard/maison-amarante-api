@@ -102,6 +102,47 @@ def pennylane_get_customers():
     return all_customers
 
 
+def extract_pennylane_notes(item: dict) -> str:
+    """Extrait les commentaires/notes d'un objet Pennylane (devis, facture, abonnement).
+
+    Essaie plusieurs noms de champs possibles dans l'API Pennylane.
+    """
+    # Liste des champs possibles pour les notes/commentaires
+    note_fields = [
+        "comments",           # Commentaires
+        "notes",              # Notes
+        "special_mention",    # Mention spéciale
+        "internal_notes",     # Notes internes
+        "pdf_invoice_free_text",  # Texte libre sur facture PDF
+        "free_text",          # Texte libre
+        "customer_note",      # Note client
+        "memo",               # Mémo
+        "description",        # Description
+    ]
+
+    notes_parts = []
+    for field in note_fields:
+        value = item.get(field)
+        if value and isinstance(value, str) and value.strip():
+            notes_parts.append(value.strip())
+        elif value and isinstance(value, list):
+            # Si c'est une liste de commentaires
+            for comment in value:
+                if isinstance(comment, dict):
+                    # Format: {"content": "...", "author": "..."}
+                    content = comment.get("content") or comment.get("text") or comment.get("body")
+                    if content:
+                        notes_parts.append(content.strip())
+                elif isinstance(comment, str):
+                    notes_parts.append(comment.strip())
+
+    # Debug: log les champs trouvés (à retirer en prod)
+    if notes_parts:
+        print(f"[PENNYLANE] Found notes: {notes_parts[:100]}...")
+
+    return "\n".join(notes_parts) if notes_parts else ""
+
+
 def pennylane_get_quotes():
     """Récupère tous les devis depuis Pennylane"""
     url = f"{PENNYLANE_API_URL}/quotes"
@@ -617,7 +658,10 @@ def sync_pennylane_to_suivi():
         if quote_id and quote_id not in existing_by_pennylane_id:
             customer_name = extract_customer_name_from_label(quote.get("label", ""), quote.get("filename", ""))
             amount = quote.get("amount", 0)
-            
+
+            # Extraire les commentaires/notes de Pennylane
+            notes = extract_pennylane_notes(quote)
+
             card_fields = {
                 "Nom du Client": customer_name,
                 "ID Pennylane": quote_id,
@@ -625,7 +669,9 @@ def sync_pennylane_to_suivi():
                 "Statut": "Devis",
                 "Date": datetime.now().strftime("%Y-%m-%d")
             }
-            
+            if notes:
+                card_fields["Notes"] = notes
+
             result = create_suivi_card(card_fields)
             if result["success"]:
                 results["quotes_synced"] += 1
@@ -638,7 +684,10 @@ def sync_pennylane_to_suivi():
         if invoice_id and invoice_id not in existing_by_pennylane_id:
             customer_name = extract_customer_name_from_label(invoice.get("label", ""), invoice.get("filename", ""))
             amount = invoice.get("amount", invoice.get("currency_amount", 0))
-            
+
+            # Extraire les commentaires/notes de Pennylane
+            notes = extract_pennylane_notes(invoice)
+
             card_fields = {
                 "Nom du Client": customer_name,
                 "ID Pennylane": invoice_id,
@@ -646,7 +695,9 @@ def sync_pennylane_to_suivi():
                 "Statut": "Factures",
                 "Date": datetime.now().strftime("%Y-%m-%d")
             }
-            
+            if notes:
+                card_fields["Notes"] = notes
+
             result = create_suivi_card(card_fields)
             if result["success"]:
                 results["invoices_synced"] += 1
@@ -658,14 +709,19 @@ def sync_pennylane_to_suivi():
         sub_id = str(sub.get("id", ""))
         if sub_id and sub_id not in existing_by_pennylane_id:
             customer_name = extract_customer_name_from_label(sub.get("label", ""), sub.get("filename", ""))
-            
+
+            # Extraire les commentaires/notes de Pennylane
+            notes = extract_pennylane_notes(sub)
+
             card_fields = {
                 "Nom du Client": customer_name,
                 "ID Pennylane": sub_id,
                 "Statut": "Abonnements",
                 "Date": datetime.now().strftime("%Y-%m-%d")
             }
-            
+            if notes:
+                card_fields["Notes"] = notes
+
             result = create_suivi_card(card_fields)
             if result["success"]:
                 results["subscriptions_synced"] += 1
