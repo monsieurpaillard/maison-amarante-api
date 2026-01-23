@@ -1681,7 +1681,12 @@ def bouquet_page(bouquet_id):
     fields = bouquet.get("fields", {})
     nom = fields.get("Nom", bouquet_id)
     photo_url = fields["Photo"][0].get("url", "") if fields.get("Photo") else ""
-    
+
+    # Gérer couleurs comme string ou array
+    couleurs = fields.get("Couleurs", "")
+    if isinstance(couleurs, list):
+        couleurs = ", ".join(couleurs)
+
     return f"""
     <!DOCTYPE html>
     <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1693,7 +1698,7 @@ def bouquet_page(bouquet_id):
     <h1>{nom}</h1>
     <p><strong>{bouquet_id}</strong></p>
     <p><span class="tag">{fields.get('Style', '')}</span><span class="tag">{fields.get('Taille', '')}</span></p>
-    <p>Couleurs: {', '.join(fields.get('Couleurs', []))}</p>
+    <p>Couleurs: {couleurs}</p>
     </body></html>
     """
 
