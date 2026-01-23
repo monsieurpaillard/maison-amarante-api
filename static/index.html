@@ -620,8 +620,8 @@
             }
         }
         
-        // TODO: Remettre '/api/sync' quand la sandbox n'est plus nécessaire
-        syncAllBtn.addEventListener('click', () => doSync('/api/test/sync-all', syncAllBtn));
+        // Mode production: vrai Pennylane
+        syncAllBtn.addEventListener('click', () => doSync('/api/sync', syncAllBtn));
 
         // Parse notes avec IA
         const parseBtn = document.getElementById('parseBtn');
