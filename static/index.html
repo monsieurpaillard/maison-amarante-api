@@ -523,23 +523,25 @@
                 const analysis = data.analysis;
                 const created = data.created;
 
-                // Vérifier si la création a réussi
-                if (!created || !created.success) {
-                    alert('Erreur lors de la création: ' + (created?.error || 'Erreur inconnue'));
-                    return;
-                }
-
                 let html = '';
                 if (analysis.style) html += `<div class="result-row"><span class="result-label">Style</span><span class="result-value">${analysis.style}</span></div>`;
                 if (analysis.taille_suggeree) html += `<div class="result-row"><span class="result-label">Taille</span><span class="result-value">${analysis.taille_suggeree}</span></div>`;
                 if (analysis.couleurs?.length) html += `<div class="result-row"><span class="result-label">Couleurs</span><span class="result-value">${analysis.couleurs.join(', ')}</span></div>`;
 
                 document.getElementById('resultContent').innerHTML = html;
-                document.getElementById('successBadge').innerHTML = `<strong>${created.bouquet_id}</strong><br><a href="${created.public_url}" target="_blank">Voir la fiche →</a>`;
+
+                // Vérifier si la création a réussi
+                if (!created || !created.success) {
+                    document.getElementById('successBadge').innerHTML = `<span style="color: #e74c3c;">❌ Erreur: ${created?.error || 'Création échouée'}</span>`;
+                    document.getElementById('successBadge').style.background = '#ffe6e6';
+                } else {
+                    document.getElementById('successBadge').innerHTML = `<strong>${created.bouquet_id}</strong><br><a href="${created.public_url}" target="_blank">Voir la fiche →</a>`;
+                    document.getElementById('successBadge').style.background = '#00b894';
+                    currentImageBase64 = null;
+                    preview.innerHTML = '<span class="preview-placeholder">Aucune photo</span>';
+                }
 
                 resultCard.style.display = 'block';
-                currentImageBase64 = null;
-                preview.innerHTML = '<span class="preview-placeholder">Aucune photo</span>';
                 
             } catch (err) {
                 alert('Erreur: ' + err.message);

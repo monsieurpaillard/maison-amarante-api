@@ -1570,11 +1570,16 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     public_url = f"{base_url}/b/{bouquet_id}"
     qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={public_url}"
 
+    # S'assurer que couleurs est une liste
+    couleurs = data.get("couleurs", [])
+    if isinstance(couleurs, str):
+        couleurs = [c.strip() for c in couleurs.split(",")]
+
     fields = {
         "Bouquet_ID": bouquet_id,
         "Nom": data.get("nom", f"Bouquet {data.get('style', '')}"),
         "Taille": data.get("taille", data.get("taille_suggeree", "Moyen")),
-        "Couleurs": data.get("couleurs", []),
+        "Couleurs": couleurs,
         "Style": data.get("style", "Classique"),
         "Statut": "Disponible",
         "QR_Code_URL": public_url
@@ -1584,15 +1589,25 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
         fields["Photo"] = [{"url": image_url}]
         fields["QR_Code"] = [{"url": qr_image_url}]
 
-    print(f"[BOUQUET] Creating bouquet {bouquet_id} with fields: {list(fields.keys())}")
+    print(f"[BOUQUET] Creating bouquet {bouquet_id}")
+    print(f"[BOUQUET] Fields: {fields}")
     response = req.post(url, headers=headers, json={"fields": fields})
-    print(f"[BOUQUET] Response: {response.status_code}")
+    print(f"[BOUQUET] Response status: {response.status_code}")
+    print(f"[BOUQUET] Response body: {response.text[:500]}")
 
     if response.status_code in [200, 201]:
         return {"success": True, "bouquet_id": bouquet_id, "public_url": public_url, "qr_image": qr_image_url}
 
-    print(f"[BOUQUET] Error: {response.text}")
-    return {"success": False, "error": response.text, "bouquet_id": None, "public_url": None}
+    # Parse error message
+    error_msg = "Erreur Airtable"
+    try:
+        error_data = response.json()
+        if "error" in error_data:
+            error_msg = error_data["error"].get("message", response.text)
+    except:
+        error_msg = response.text[:200]
+
+    return {"success": False, "error": error_msg, "bouquet_id": "ERREUR", "public_url": "#"}
 
 
 # ==================== ROUTES ====================
