@@ -2250,19 +2250,23 @@ def api_parse_clients():
             if parsed.get("nb_bouquets"):
                 update_fields["Nb_Bouquets"] = int(parsed["nb_bouquets"])
 
-            # Fréquence et Persona
+            # Fréquence - doit matcher les options Airtable
             if parsed.get("frequence"):
-                update_fields["Fréquence"] = parsed["frequence"]
+                freq = parsed["frequence"]
+                # Normaliser pour matcher les options Single Select
+                freq_map = {
+                    "hebdomadaire": "Hebdomadaire",
+                    "bimensuel": "Bimensuel",
+                    "mensuel": "Mensuel",
+                    "ponctuel": "Ponctuel",
+                    "bimestriel": "Bimestriel",
+                    "trimestriel": "Trimestriel",
+                }
+                freq_normalized = freq_map.get(freq.lower().strip(), freq)
+                update_fields["Fréquence"] = freq_normalized
+
             if parsed.get("persona"):
                 update_fields["Persona"] = parsed["persona"]
-
-            # Tailles
-            if parsed.get("tailles"):
-                tailles = parsed["tailles"]
-                if isinstance(tailles, list):
-                    update_fields["Tailles_Demandées"] = ", ".join(tailles)
-                else:
-                    update_fields["Tailles_Demandées"] = str(tailles)
 
             # Couleurs et Style - texte libre
             if parsed.get("pref_couleurs"):
