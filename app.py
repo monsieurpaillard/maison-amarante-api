@@ -2335,9 +2335,9 @@ def api_sync_pennylane():
 
 @app.route("/api/sync/clients", methods=["POST"])
 def api_sync_clients():
-    """Sync Suivi Facturation → Clients (sans parsing IA pour la rapidité)"""
+    """Sync Suivi Facturation → Clients (avec parsing IA des notes)"""
     try:
-        results = sync_suivi_to_clients(skip_parsing=True)
+        results = sync_suivi_to_clients(skip_parsing=False)
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
