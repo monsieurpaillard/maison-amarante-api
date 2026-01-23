@@ -290,10 +290,15 @@
     <!-- Sync Tab -->
     <div id="sync" class="tab-content">
         <div class="card">
-            <h3>🧪 Synchronisation complète (SANDBOX)</h3>
-            <p>⚠️ Mode test : Fake Pennylane → Suivi Facturation → Base Clients</p>
-            <button class="btn btn-primary" id="syncAllBtn">Tout synchroniser</button>
-            <button class="btn" style="background: #9b59b6; margin-left: 10px;" id="parseBtn">🤖 Parser les notes (IA)</button>
+            <h3>Synchronisation</h3>
+            <p style="margin-bottom: 15px;">Étape 1 : Récupère les données Pennylane → Suivi Facturation</p>
+            <button class="btn btn-primary" id="syncPennylaneBtn">1. Sync Pennylane</button>
+
+            <p style="margin: 20px 0 15px 0; padding-top: 15px; border-top: 1px solid #eee;">Étape 2 : Ajoute tes notes sur les cartes Suivi Facturation dans Airtable</p>
+
+            <p style="margin-bottom: 15px;">Étape 3 : Synchronise vers la base Clients (avec parsing IA des notes)</p>
+            <button class="btn" style="background: #27ae60;" id="syncClientsBtn">2. Sync Clients</button>
+            <button class="btn" style="background: #9b59b6; margin-left: 10px;" id="parseBtn">🤖 Re-parser les notes (IA)</button>
 
             <div class="loading" id="syncLoading">
                 <div class="spinner"></div>
@@ -552,65 +557,61 @@
         });
         
         // Sync
-        const syncAllBtn = document.getElementById('syncAllBtn');
+        const syncPennylaneBtn = document.getElementById('syncPennylaneBtn');
+        const syncClientsBtn = document.getElementById('syncClientsBtn');
         const syncLoading = document.getElementById('syncLoading');
         const syncResults = document.getElementById('syncResults');
         const syncError = document.getElementById('syncError');
-        
-        async function doSync(endpoint, btn) {
+
+        async function doSync(endpoint, btn, syncType) {
             btn.disabled = true;
             syncLoading.classList.add('show');
+            document.getElementById('loadingText').textContent = syncType === 'pennylane'
+                ? 'Sync Pennylane en cours...'
+                : 'Sync Clients en cours...';
             syncResults.style.display = 'none';
             syncError.classList.remove('show');
-            
+
             try {
                 const response = await fetch(endpoint, { method: 'POST' });
                 const data = await response.json();
-                
+
                 if (data.error) {
                     syncError.textContent = 'Erreur: ' + data.error;
                     syncError.classList.add('show');
                     return;
                 }
-                
-                // Extraire les stats selon le type de réponse
-                const isCombinedSync = data.pennylane !== undefined && data.clients !== undefined;
 
-                if (isCombinedSync) {
-                    // Sync complète (Pennylane + Clients)
-                    const p = data.pennylane || {};
-                    const c = data.clients || {};
-                    const totalCartes = (p.quotes_synced || 0) + (p.factures_synced || 0) + (p.subscriptions_synced || 0) + (p.essais_synced || 0) + (p.a_livrer_synced || 0);
-                    const totalClients = (c.clients_created || 0) + (c.clients_updated || 0);
-
-                    document.getElementById('syncStat1').textContent = totalCartes;
-                    document.getElementById('syncLabel1').textContent = 'Cartes créées';
-                    document.getElementById('syncStat2').textContent = totalClients;
-                    document.getElementById('syncLabel2').textContent = 'Clients traités';
-                    document.getElementById('syncStat3').textContent = c.clients_created || 0;
-                    document.getElementById('syncLabel3').textContent = 'Nouveaux';
-                    document.getElementById('syncStat4').textContent = c.livraisons_created || 0;
-                    document.getElementById('syncLabel4').textContent = 'Livraisons';
+                if (syncType === 'pennylane') {
+                    // Sync Pennylane uniquement
+                    const totalCartes = (data.quotes_synced || 0) + (data.invoices_synced || 0) + (data.subscriptions_synced || 0);
+                    document.getElementById('syncStat1').textContent = data.quotes_synced || 0;
+                    document.getElementById('syncLabel1').textContent = 'Devis';
+                    document.getElementById('syncStat2').textContent = data.invoices_synced || 0;
+                    document.getElementById('syncLabel2').textContent = 'Factures';
+                    document.getElementById('syncStat3').textContent = data.subscriptions_synced || 0;
+                    document.getElementById('syncLabel3').textContent = 'Abonnements';
+                    document.getElementById('syncStat4').textContent = totalCartes;
+                    document.getElementById('syncLabel4').textContent = 'Total cartes';
                 } else {
-                    // Stats simples (fallback)
-                    const clients = data.clients || data;
-                    document.getElementById('syncStat1').textContent = clients.clients_created || 0;
+                    // Sync Clients
+                    document.getElementById('syncStat1').textContent = data.clients_created || 0;
                     document.getElementById('syncLabel1').textContent = 'Clients créés';
-                    document.getElementById('syncStat2').textContent = clients.clients_updated || 0;
+                    document.getElementById('syncStat2').textContent = data.clients_updated || 0;
                     document.getElementById('syncLabel2').textContent = 'Mis à jour';
-                    document.getElementById('syncStat3').textContent = clients.notes_parsed || 0;
-                    document.getElementById('syncLabel3').textContent = '🤖 Notes IA';
-                    document.getElementById('syncStat4').textContent = clients.livraisons_created || 0;
+                    document.getElementById('syncStat3').textContent = data.notes_parsed || 0;
+                    document.getElementById('syncLabel3').textContent = 'Notes parsées';
+                    document.getElementById('syncStat4').textContent = data.livraisons_created || 0;
                     document.getElementById('syncLabel4').textContent = 'Livraisons';
                 }
-                
-                const details = data.total_details || data.details || (data.clients && data.clients.details) || [];
+
+                const details = data.details || [];
                 document.getElementById('syncDetailsList').innerHTML = details.length
                     ? details.map(d => `<div class="detail-item">${d}</div>`).join('')
                     : '<div class="detail-item">Aucune modification</div>';
-                
+
                 syncResults.style.display = 'block';
-                
+
             } catch (err) {
                 syncError.textContent = 'Erreur: ' + err.message;
                 syncError.classList.add('show');
@@ -619,18 +620,19 @@
                 btn.disabled = false;
             }
         }
-        
-        // Mode production: vrai Pennylane
-        syncAllBtn.addEventListener('click', () => doSync('/api/sync', syncAllBtn));
+
+        // Boutons séparés
+        syncPennylaneBtn.addEventListener('click', () => doSync('/api/sync/pennylane', syncPennylaneBtn, 'pennylane'));
+        syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn, 'clients'));
 
         // Parse notes avec IA
         const parseBtn = document.getElementById('parseBtn');
-        const loadingText = document.getElementById('loadingText');
         parseBtn.addEventListener('click', async () => {
             parseBtn.disabled = true;
-            syncAllBtn.disabled = true;
+            syncPennylaneBtn.disabled = true;
+            syncClientsBtn.disabled = true;
             syncLoading.classList.add('show');
-            loadingText.textContent = 'Parsing IA en cours (peut prendre 1-2 min)...';
+            document.getElementById('loadingText').textContent = 'Parsing IA en cours (peut prendre 1-2 min)...';
             syncResults.style.display = 'none';
             syncError.classList.remove('show');
 
@@ -653,7 +655,7 @@
 
                     totalParsed += data.parsed || 0;
                     totalUpdated += data.updated || 0;
-                    loadingText.textContent = `Parsing IA... ${totalParsed} notes traitées`;
+                    document.getElementById('loadingText').textContent = `Parsing IA... ${totalParsed} notes traitées`;
 
                     if (!data.next_offset) break;
                     offset = data.next_offset;
@@ -675,9 +677,9 @@
                 syncError.classList.add('show');
             } finally {
                 syncLoading.classList.remove('show');
-                loadingText.textContent = 'Synchronisation en cours...';
                 parseBtn.disabled = false;
-                syncAllBtn.disabled = false;
+                syncPennylaneBtn.disabled = false;
+                syncClientsBtn.disabled = false;
             }
         });
 
