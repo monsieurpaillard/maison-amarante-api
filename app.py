@@ -1561,11 +1561,15 @@ def get_bouquet_by_id(bouquet_id: str) -> dict:
 def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_BOUQUETS_TABLE}"
     headers = get_airtable_headers()
-    
+
     bouquet_id = get_next_bouquet_id()
-    public_url = f"https://web-production-37db3.up.railway.app/b/{bouquet_id}"
+    # URL dynamique basée sur l'environnement
+    base_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "maison-amarante-api-production.up.railway.app")
+    if not base_url.startswith("http"):
+        base_url = f"https://{base_url}"
+    public_url = f"{base_url}/b/{bouquet_id}"
     qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={public_url}"
-    
+
     fields = {
         "Bouquet_ID": bouquet_id,
         "Nom": data.get("nom", f"Bouquet {data.get('style', '')}"),
@@ -1575,15 +1579,20 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
         "Statut": "Disponible",
         "QR_Code_URL": public_url
     }
-    
+
     if image_url:
         fields["Photo"] = [{"url": image_url}]
         fields["QR_Code"] = [{"url": qr_image_url}]
-    
+
+    print(f"[BOUQUET] Creating bouquet {bouquet_id} with fields: {list(fields.keys())}")
     response = req.post(url, headers=headers, json={"fields": fields})
-    if response.status_code == 200:
+    print(f"[BOUQUET] Response: {response.status_code}")
+
+    if response.status_code in [200, 201]:
         return {"success": True, "bouquet_id": bouquet_id, "public_url": public_url, "qr_image": qr_image_url}
-    return {"success": False, "error": response.text}
+
+    print(f"[BOUQUET] Error: {response.text}")
+    return {"success": False, "error": response.text, "bouquet_id": None, "public_url": None}
 
 
 # ==================== ROUTES ====================
