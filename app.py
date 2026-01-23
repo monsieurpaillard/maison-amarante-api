@@ -1610,10 +1610,10 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     public_url = f"{base_url}/b/{bouquet_id}"
     qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={public_url}"
 
-    # S'assurer que couleurs est une liste
+    # Convertir couleurs en string (champ texte dans Airtable)
     couleurs = data.get("couleurs", [])
-    if isinstance(couleurs, str):
-        couleurs = [c.strip() for c in couleurs.split(",")]
+    if isinstance(couleurs, list):
+        couleurs = ", ".join(couleurs)
 
     # Normaliser taille et style pour correspondre aux options Airtable
     taille_raw = data.get("taille") or data.get("taille_suggeree") or "Moyen"
