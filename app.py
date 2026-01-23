@@ -1806,33 +1806,22 @@ def health():
 
 @app.route("/api/test/cleanup", methods=["POST"])
 def api_test_cleanup():
-    """Supprime toutes les données de test (TEST et FAKE) dans Suivi + Clients"""
-    results = {"suivi_deleted": 0, "clients_deleted": 0}
+    """Supprime TOUTES les cartes Suivi Facturation (Airtable uniquement, ne touche PAS Pennylane)"""
+    results = {"suivi_deleted": 0, "clients_deleted": 0, "errors": []}
 
-    # 1. Cleanup Suivi Facturation
+    # Cleanup Suivi Facturation - TOUTES les cartes
     cards = get_suivi_cards()
     for card in cards:
-        name = card.get("fields", {}).get("Nom du Client", "")
-        pennylane_id = card.get("fields", {}).get("ID Pennylane", "")
-        if name.startswith("TEST ") or name.startswith("FAKE ") or pennylane_id.startswith("FAKE-"):
-            record_id = card["id"]
-            url = f"https://api.airtable.com/v0/{SUIVI_BASE_ID}/{SUIVI_TABLE_ID}/{record_id}"
-            response = req.delete(url, headers=get_airtable_headers())
-            if response.status_code == 200:
-                results["suivi_deleted"] += 1
+        record_id = card["id"]
+        name = card.get("fields", {}).get("Nom du Client", "inconnu")
+        url = f"https://api.airtable.com/v0/{SUIVI_BASE_ID}/{SUIVI_TABLE_ID}/{record_id}"
+        response = req.delete(url, headers=get_airtable_headers())
+        if response.status_code == 200:
+            results["suivi_deleted"] += 1
+        else:
+            results["errors"].append(f"Erreur suppression {name}: {response.text}")
 
-    # 2. Cleanup Clients (Maison Amarante DB)
-    _, _, all_clients = get_existing_clients()
-    for client in all_clients:
-        name = client.get("fields", {}).get("Nom", "")
-        if name.startswith("TEST ") or name.startswith("FAKE "):
-            record_id = client["id"]
-            url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CLIENTS_TABLE}/{record_id}"
-            response = req.delete(url, headers=get_airtable_headers())
-            if response.status_code == 200:
-                results["clients_deleted"] += 1
-
-    results["deleted"] = results["suivi_deleted"] + results["clients_deleted"]
+    results["deleted"] = results["suivi_deleted"]
     return jsonify(results)
 
 
