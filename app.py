@@ -1831,14 +1831,16 @@ def api_test_parse_debug():
 
 @app.route("/api/test/pennylane-structure", methods=["GET"])
 def api_test_pennylane_structure():
-    """Debug: Montre la structure des données Pennylane (devis, factures, abonnements)"""
+    """Debug: Montre la structure des données Pennylane (devis, factures, abonnements, customers)"""
     result = {
         "sample_quote": None,
         "sample_invoice": None,
         "sample_subscription": None,
+        "sample_customer": None,
         "quote_fields": [],
         "invoice_fields": [],
-        "subscription_fields": []
+        "subscription_fields": [],
+        "customer_fields": []
     }
 
     # Récupérer un devis
@@ -1858,6 +1860,12 @@ def api_test_pennylane_structure():
     if subs:
         result["sample_subscription"] = subs[0]
         result["subscription_fields"] = list(subs[0].keys())
+
+    # Récupérer un customer (détails complets)
+    customers = pennylane_get_customers()
+    if customers:
+        result["sample_customer"] = customers[0]
+        result["customer_fields"] = list(customers[0].keys())
 
     return jsonify(result)
 
