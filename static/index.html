@@ -414,7 +414,7 @@
     <div id="tournees" class="tab-content">
         <div class="card">
             <h3>🚚 Tournées de la semaine</h3>
-            <p>Génère des itinéraires optimisés, divisés par zones géographiques (~12 clients max par tournée)</p>
+            <p>Génère des itinéraires optimisés, divisés par zones géographiques (6h max par tournée)</p>
             <button class="btn btn-primary" id="prepareTourneesBtn">Calculer les tournées</button>
 
             <div class="loading" id="tourneesLoading">
@@ -872,15 +872,27 @@
                     tourneesList.innerHTML = tournees.map((t, idx) => {
                         const color = tourneeColors[idx % tourneeColors.length];
                         const clients = t.clients || [];
+                        const tempsPercent = Math.min((t.temps_estime_min / t.temps_max) * 100, 100);
+                        const tempsColor = tempsPercent < 70 ? '#27ae60' : tempsPercent < 90 ? '#f39c12' : '#e74c3c';
+                        const heures = Math.floor(t.temps_estime_min / 60);
+                        const minutes = t.temps_estime_min % 60;
+                        const tempsFormate = heures > 0 ? `${heures}h${minutes.toString().padStart(2, '0')}` : `${minutes}min`;
                         return `
                             <div class="card" style="border-left: 4px solid ${color}; margin-bottom: 15px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <div>
+                                    <div style="flex: 1;">
                                         <h4 style="margin: 0; color: ${color};">Tournée ${t.numero}</h4>
                                         <div style="font-size: 0.85em; color: #666; margin-top: 4px;">
-                                            📅 ${t.jour} · ${t.nb_clients} clients · ${t.nb_bouquets} bouquets · ~${t.duree_estimee}
+                                            📅 ${t.jour} · ${t.nb_clients} clients · ${t.nb_bouquets} bouquets
                                         </div>
-                                        <div style="font-size: 0.8em; color: #999; margin-top: 2px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                                            <span style="font-size: 0.85em; font-weight: 600;">${tempsFormate} / 6h</span>
+                                            <div style="flex: 1; max-width: 120px; height: 6px; background: #eee; border-radius: 3px; overflow: hidden;">
+                                                <div style="width: ${tempsPercent}%; height: 100%; background: ${tempsColor}; border-radius: 3px;"></div>
+                                            </div>
+                                            <span style="font-size: 0.8em; color: ${tempsColor};">${Math.round(tempsPercent)}%</span>
+                                        </div>
+                                        <div style="font-size: 0.8em; color: #999; margin-top: 4px;">
                                             ${t.zones?.join(', ') || ''}
                                         </div>
                                     </div>
@@ -899,6 +911,7 @@
                                                     <div style="font-size: 0.8em; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${c.adresse || 'Pas d\'adresse'}</div>
                                                     <div style="font-size: 0.75em; color: #999;">${c.nb_bouquets} bouquet(s) ${c.creneau ? '· ' + c.creneau : ''}</div>
                                                 </div>
+                                                <span style="background: #f0f0f0; color: #666; padding: 2px 6px; border-radius: 10px; font-size: 0.7em; font-weight: 600;">+${c.temps_ajoute || 0}min</span>
                                             </div>
                                         `).join('')}
                                     </div>
