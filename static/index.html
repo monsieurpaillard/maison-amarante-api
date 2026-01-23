@@ -296,8 +296,11 @@
 
             <p style="margin: 20px 0 15px 0; padding-top: 15px; border-top: 1px solid #eee;">Étape 2 : Ajoute tes notes sur les cartes Suivi Facturation dans Airtable</p>
 
-            <p style="margin-bottom: 15px;">Étape 3 : Synchronise vers la base Clients (avec parsing IA des notes)</p>
+            <p style="margin-bottom: 15px;">Étape 3 : Synchronise vers la base Clients</p>
             <button class="btn" style="background: #27ae60;" id="syncClientsBtn">2. Sync Clients</button>
+
+            <p style="margin: 20px 0 15px 0; padding-top: 15px; border-top: 1px solid #eee;">Étape 4 : Parser les notes avec l'IA</p>
+            <button class="btn" style="background: #9b59b6;" id="parseBtn">3. Parser notes (IA)</button>
 
             <div class="loading" id="syncLoading">
                 <div class="spinner"></div>
@@ -623,6 +626,62 @@
         // Boutons séparés
         syncPennylaneBtn.addEventListener('click', () => doSync('/api/sync/pennylane', syncPennylaneBtn, 'pennylane'));
         syncClientsBtn.addEventListener('click', () => doSync('/api/sync/clients', syncClientsBtn, 'clients'));
+
+        // Parse notes avec IA
+        const parseBtn = document.getElementById('parseBtn');
+        parseBtn.addEventListener('click', async () => {
+            parseBtn.disabled = true;
+            syncPennylaneBtn.disabled = true;
+            syncClientsBtn.disabled = true;
+            syncLoading.classList.add('show');
+            document.getElementById('loadingText').textContent = 'Parsing IA en cours...';
+            syncResults.style.display = 'none';
+            syncError.classList.remove('show');
+
+            let totalParsed = 0;
+            let totalUpdated = 0;
+            let offset = 0;
+            const limit = 15;
+
+            try {
+                while (true) {
+                    const response = await fetch(`/api/parse-clients?limit=${limit}&offset=${offset}`, { method: 'POST' });
+                    const data = await response.json();
+
+                    if (data.error) {
+                        syncError.textContent = 'Erreur: ' + data.error;
+                        syncError.classList.add('show');
+                        break;
+                    }
+
+                    totalParsed += data.parsed || 0;
+                    totalUpdated += data.updated || 0;
+                    document.getElementById('loadingText').textContent = `Parsing IA... ${totalParsed} notes`;
+
+                    if (!data.next_offset) break;
+                    offset = data.next_offset;
+                }
+
+                document.getElementById('syncStat1').textContent = totalParsed;
+                document.getElementById('syncLabel1').textContent = 'Notes parsées';
+                document.getElementById('syncStat2').textContent = totalUpdated;
+                document.getElementById('syncLabel2').textContent = 'Clients mis à jour';
+                document.getElementById('syncStat3').textContent = '-';
+                document.getElementById('syncLabel3').textContent = '';
+                document.getElementById('syncStat4').textContent = '-';
+                document.getElementById('syncLabel4').textContent = '';
+                document.getElementById('syncDetailsList').innerHTML = '<p>Champs: Adresse, Créneau, Fréquence, Couleurs, Style...</p>';
+                syncResults.style.display = 'block';
+            } catch (err) {
+                syncError.textContent = 'Erreur: ' + err.message;
+                syncError.classList.add('show');
+            } finally {
+                syncLoading.classList.remove('show');
+                parseBtn.disabled = false;
+                syncPennylaneBtn.disabled = false;
+                syncClientsBtn.disabled = false;
+            }
+        });
 
         // Cleanup
         const cleanupBtn = document.getElementById('cleanupBtn');
