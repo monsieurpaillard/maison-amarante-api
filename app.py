@@ -1062,59 +1062,145 @@ def get_geographic_zone(code_postal: str) -> str:
 
 # Constantes temps pour les tournées
 TEMPS_ARRET = 3  # minutes par livraison
-TEMPS_MEME_ZONE = 5  # minutes entre clients même zone
-TEMPS_ZONES_ADJACENTES = 10  # minutes entre zones adjacentes
-TEMPS_ZONES_ELOIGNEES = 15  # minutes entre zones éloignées
 TEMPS_MAX_TOURNEE = 360  # 6 heures max
+TEMPS_FALLBACK = 10  # minutes par défaut si OSRM échoue
 
-# Zones adjacentes (pour calculer les temps de trajet)
-ZONES_ADJACENTES = {
-    "Paris Centre": ["Paris Rive Gauche", "Paris Nord-Ouest", "Paris Est"],
-    "Paris Rive Gauche": ["Paris Centre", "Paris Sud-Ouest", "Paris Est", "Val-de-Marne (94)"],
-    "Paris Nord-Ouest": ["Paris Centre", "Paris Nord-Est", "Hauts-de-Seine (92)"],
-    "Paris Sud-Ouest": ["Paris Rive Gauche", "Paris Nord-Ouest", "Hauts-de-Seine (92)"],
-    "Paris Est": ["Paris Centre", "Paris Rive Gauche", "Paris Nord-Est", "Val-de-Marne (94)", "Seine-St-Denis (93)"],
-    "Paris Nord-Est": ["Paris Nord-Ouest", "Paris Est", "Seine-St-Denis (93)"],
-    "Hauts-de-Seine (92)": ["Paris Nord-Ouest", "Paris Sud-Ouest"],
-    "Val-de-Marne (94)": ["Paris Rive Gauche", "Paris Est"],
-    "Seine-St-Denis (93)": ["Paris Est", "Paris Nord-Est"],
-    "Autre": []
-}
+# Cache pour les coordonnées géocodées
+_geocode_cache = {}
 
 
-def get_travel_time(zone1: str, zone2: str) -> int:
-    """Calcule le temps de trajet entre deux zones."""
-    if zone1 == zone2:
-        return TEMPS_MEME_ZONE
-    if zone2 in ZONES_ADJACENTES.get(zone1, []):
-        return TEMPS_ZONES_ADJACENTES
-    return TEMPS_ZONES_ELOIGNEES
+def geocode_address(address: str) -> tuple:
+    """Géocode une adresse avec Nominatim (OpenStreetMap). Retourne (lat, lon) ou None."""
+    if not address:
+        return None
+
+    # Vérifier le cache
+    if address in _geocode_cache:
+        return _geocode_cache[address]
+
+    try:
+        # Ajouter "France" pour améliorer les résultats
+        query = f"{address}, France" if "france" not in address.lower() else address
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {"q": query, "format": "json", "limit": 1}
+        headers = {"User-Agent": "MaisonAmarante/1.0"}
+
+        response = req.get(url, params=params, headers=headers, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                lat = float(data[0]["lat"])
+                lon = float(data[0]["lon"])
+                _geocode_cache[address] = (lat, lon)
+                return (lat, lon)
+    except Exception as e:
+        print(f"[GEOCODE] Error for '{address}': {e}")
+
+    _geocode_cache[address] = None
+    return None
 
 
-def calculate_client_time(client: dict, prev_zone: str) -> int:
-    """Calcule le temps ajouté par un client (trajet + arrêt)."""
-    zone = client.get("zone", "Autre")
-    travel_time = get_travel_time(prev_zone, zone) if prev_zone else 0
-    return travel_time + TEMPS_ARRET
+def get_route_time_osrm(coords: list) -> int:
+    """Calcule le temps de trajet via OSRM. coords = [(lat, lon), ...]. Retourne minutes."""
+    if len(coords) < 2:
+        return 0
+
+    try:
+        # OSRM utilise lon,lat (inversé)
+        coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords])
+        url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}"
+        params = {"overview": "false"}
+
+        response = req.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("code") == "Ok" and data.get("routes"):
+                duration_seconds = data["routes"][0]["duration"]
+                return int(duration_seconds / 60)  # Convertir en minutes
+    except Exception as e:
+        print(f"[OSRM] Error: {e}")
+
+    # Fallback: estimation basée sur le nombre de points
+    return (len(coords) - 1) * TEMPS_FALLBACK
+
+
+def calculate_tournee_time_real(clients: list) -> tuple:
+    """Calcule le temps réel d'une tournée avec OSRM.
+
+    Retourne (temps_total, clients_avec_temps) où chaque client a temps_ajoute.
+    """
+    if not clients:
+        return 0, []
+
+    # Géocoder toutes les adresses
+    coords = []
+    for client in clients:
+        coord = geocode_address(client.get("adresse", ""))
+        client["_coords"] = coord
+        if coord:
+            coords.append(coord)
+
+    # Si pas assez de coordonnées, utiliser le fallback
+    if len(coords) < 2:
+        total = 0
+        for i, client in enumerate(clients):
+            temps = TEMPS_ARRET + (TEMPS_FALLBACK if i > 0 else 0)
+            client["temps_ajoute"] = temps
+            total += temps
+        return total, clients
+
+    # Calculer le temps total avec OSRM
+    temps_trajet = get_route_time_osrm(coords)
+    temps_arrets = len(clients) * TEMPS_ARRET
+    temps_total = temps_trajet + temps_arrets
+
+    # Répartir le temps de trajet entre les clients
+    temps_trajet_par_client = temps_trajet / max(len(clients) - 1, 1)
+    for i, client in enumerate(clients):
+        if i == 0:
+            client["temps_ajoute"] = TEMPS_ARRET
+        else:
+            client["temps_ajoute"] = int(temps_trajet_par_client + TEMPS_ARRET)
+
+    return temps_total, clients
+
+
+def calculate_client_time_quick(client: dict, prev_client: dict) -> int:
+    """Calcul rapide du temps ajouté (pour le splitting initial)."""
+    # Estimation simple basée sur les coordonnées si disponibles
+    if prev_client and client.get("_coords") and prev_client.get("_coords"):
+        # Distance euclidienne approximative
+        lat1, lon1 = prev_client["_coords"]
+        lat2, lon2 = client["_coords"]
+        dist = ((lat2 - lat1) ** 2 + (lon2 - lon1) ** 2) ** 0.5
+        # ~1 degré = 111km, vitesse moyenne 20km/h en ville = 3min/km
+        temps_trajet = int(dist * 111 * 3)
+        return min(temps_trajet, 30) + TEMPS_ARRET  # Cap à 30min de trajet
+    return TEMPS_FALLBACK + TEMPS_ARRET
 
 
 def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> list:
     """Divise les clients en plusieurs tournées avec contrainte temps (6h max).
 
     Stratégie:
-    1. Grouper par zone géographique
-    2. Remplir chaque tournée jusqu'à ~6h (360 min)
-    3. Calculer le temps: trajet entre zones + temps d'arrêt par client
+    1. Géocoder toutes les adresses
+    2. Grouper par zone géographique
+    3. Remplir chaque tournée jusqu'à ~6h (360 min)
+    4. Calculer le temps réel avec OSRM
     """
     if not clients:
         return []
 
-    # Grouper par zone géographique
+    # 1. Géocoder toutes les adresses d'abord
+    print(f"[TOURNEES] Géocodage de {len(clients)} adresses...")
+    for client in clients:
+        client["_coords"] = geocode_address(client.get("adresse", ""))
+        client["zone"] = get_geographic_zone(client.get("code_postal", ""))
+
+    # 2. Grouper par zone géographique
     zones = defaultdict(list)
     for client in clients:
-        zone = get_geographic_zone(client.get("code_postal", ""))
-        client["zone"] = zone  # S'assurer que la zone est dans le client
-        zones[zone].append(client)
+        zones[client["zone"]].append(client)
 
     # Ordre logique des zones (parcours géographique)
     zone_order = [
@@ -1130,11 +1216,11 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         "Autre"
     ]
 
-    # Construire les tournées avec contrainte temps
+    # 3. Construire les tournées avec estimation rapide
     tournees = []
     current_tournee = []
     current_time = 0
-    prev_zone = None
+    prev_client = None
 
     for zone_name in zone_order:
         zone_clients = zones.get(zone_name, [])
@@ -1145,37 +1231,36 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         zone_clients = sorted(zone_clients, key=lambda c: (c.get("code_postal", ""), c.get("adresse", "")))
 
         for client in zone_clients:
-            # Calculer le temps ajouté par ce client
-            temps_ajoute = calculate_client_time(client, prev_zone)
-            client["temps_ajoute"] = temps_ajoute
+            # Estimation rapide du temps
+            temps_ajoute = calculate_client_time_quick(client, prev_client)
 
-            # Si on dépasse le max avec ce client, nouvelle tournée
+            # Si on dépasse le max, nouvelle tournée
             if current_time + temps_ajoute > max_time and current_tournee:
-                tournees.append({"clients": current_tournee, "temps_total": current_time})
+                tournees.append(current_tournee)
                 current_tournee = []
                 current_time = 0
-                prev_zone = None
-                # Recalculer le temps pour ce client (premier de la nouvelle tournée)
-                temps_ajoute = TEMPS_ARRET  # Pas de trajet pour le premier
-                client["temps_ajoute"] = temps_ajoute
+                prev_client = None
+                temps_ajoute = TEMPS_ARRET
 
             current_tournee.append(client)
             current_time += temps_ajoute
-            prev_zone = client.get("zone", "Autre")
+            prev_client = client
 
-    # Ajouter la dernière tournée si elle n'est pas vide
+    # Ajouter la dernière tournée
     if current_tournee:
-        # Si elle est trop petite en temps (<1h) et qu'on a d'autres tournées, tenter fusion
-        if current_time < 60 and tournees and tournees[-1]["temps_total"] + current_time <= max_time + 30:
-            # Fusionner avec la précédente
-            for c in current_tournee:
-                c["temps_ajoute"] = calculate_client_time(c, tournees[-1]["clients"][-1].get("zone") if tournees[-1]["clients"] else None)
-            tournees[-1]["clients"].extend(current_tournee)
-            tournees[-1]["temps_total"] += current_time
+        if current_time < 60 and tournees and len(tournees[-1]) < 25:
+            tournees[-1].extend(current_tournee)
         else:
-            tournees.append({"clients": current_tournee, "temps_total": current_time})
+            tournees.append(current_tournee)
 
-    return tournees
+    # 4. Calculer le temps réel avec OSRM pour chaque tournée
+    print(f"[TOURNEES] Calcul des temps réels avec OSRM pour {len(tournees)} tournées...")
+    result = []
+    for tournee_clients in tournees:
+        temps_total, clients_avec_temps = calculate_tournee_time_real(tournee_clients)
+        result.append({"clients": clients_avec_temps, "temps_total": temps_total})
+
+    return result
 
 
 def prepare_tournees():
