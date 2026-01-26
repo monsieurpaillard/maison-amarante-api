@@ -1083,9 +1083,9 @@ def geocode_address(address: str) -> tuple:
         query = f"{address}, France" if "france" not in address.lower() else address
         url = "https://nominatim.openstreetmap.org/search"
         params = {"q": query, "format": "json", "limit": 1}
-        headers = {"User-Agent": "MaisonAmarante/1.0"}
+        headers = {"User-Agent": "MaisonAmarante/1.0 (contact@maisonamarante.fr)"}
 
-        response = req.get(url, params=params, headers=headers, timeout=5)
+        response = req.get(url, params=params, headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
             if data:
@@ -1093,8 +1093,20 @@ def geocode_address(address: str) -> tuple:
                 lon = float(data[0]["lon"])
                 _geocode_cache[address] = (lat, lon)
                 return (lat, lon)
+        elif response.status_code == 429:
+            print(f"[GEOCODE] Rate limited, using fallback")
     except Exception as e:
         print(f"[GEOCODE] Error for '{address}': {e}")
+
+    # Fallback: essayer d'extraire les coordonnées depuis le code postal Paris
+    cp = extract_postal_code(address)
+    if cp and cp.startswith("75"):
+        # Coordonnées approximatives par arrondissement
+        arr = int(cp[3:5]) if len(cp) >= 5 else 1
+        lat = 48.85 + (arr - 10) * 0.005
+        lon = 2.35 + (arr - 10) * 0.008
+        _geocode_cache[address] = (lat, lon)
+        return (lat, lon)
 
     _geocode_cache[address] = None
     return None
@@ -1108,20 +1120,35 @@ def get_route_time_osrm(coords: list) -> int:
     try:
         # OSRM utilise lon,lat (inversé)
         coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords])
-        url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}"
+        url = f"https://router.project-osrm.org/route/v1/driving/{coords_str}"
         params = {"overview": "false"}
 
-        response = req.get(url, params=params, timeout=10)
+        response = req.get(url, params=params, timeout=15)
+        print(f"[OSRM] Status: {response.status_code} for {len(coords)} coords")
+
         if response.status_code == 200:
             data = response.json()
             if data.get("code") == "Ok" and data.get("routes"):
                 duration_seconds = data["routes"][0]["duration"]
                 return int(duration_seconds / 60)  # Convertir en minutes
+            else:
+                print(f"[OSRM] No route found: {data.get('code')}")
+        elif response.status_code == 429:
+            print("[OSRM] Rate limited")
+    except req.exceptions.Timeout:
+        print("[OSRM] Timeout - using fallback")
     except Exception as e:
         print(f"[OSRM] Error: {e}")
 
-    # Fallback: estimation basée sur le nombre de points
-    return (len(coords) - 1) * TEMPS_FALLBACK
+    # Fallback: estimation basée sur distance euclidienne
+    total_time = 0
+    for i in range(1, len(coords)):
+        lat1, lon1 = coords[i-1]
+        lat2, lon2 = coords[i]
+        dist_km = ((lat2 - lat1) ** 2 + (lon2 - lon1) ** 2) ** 0.5 * 111
+        # Vitesse moyenne 25 km/h en ville = 2.4 min/km
+        total_time += int(dist_km * 2.4)
+    return max(total_time, (len(coords) - 1) * TEMPS_FALLBACK)
 
 
 def calculate_tournee_time_real(clients: list) -> tuple:
@@ -1183,19 +1210,30 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
     """Divise les clients en plusieurs tournées avec contrainte temps (6h max).
 
     Stratégie:
-    1. Géocoder toutes les adresses
-    2. Grouper par zone géographique
-    3. Remplir chaque tournée jusqu'à ~6h (360 min)
-    4. Calculer le temps réel avec OSRM
+    1. Grouper par zone géographique
+    2. Remplir chaque tournée jusqu'à ~6h (360 min)
+    3. Calculer le temps estimé (sans trop d'appels API)
     """
     if not clients:
         return []
 
-    # 1. Géocoder toutes les adresses d'abord
-    print(f"[TOURNEES] Géocodage de {len(clients)} adresses...")
+    # 1. Préparer les clients avec zone (sans géocodage pour éviter rate limits)
+    print(f"[TOURNEES] Préparation de {len(clients)} clients...")
     for client in clients:
-        client["_coords"] = geocode_address(client.get("adresse", ""))
         client["zone"] = get_geographic_zone(client.get("code_postal", ""))
+        # Géocodage léger basé sur code postal seulement
+        cp = client.get("code_postal", "")
+        if cp.startswith("75"):
+            arr = int(cp[3:5]) if len(cp) >= 5 else 1
+            client["_coords"] = (48.85 + (arr - 10) * 0.005, 2.35 + (arr - 10) * 0.008)
+        elif cp.startswith("92"):
+            client["_coords"] = (48.88, 2.25)
+        elif cp.startswith("93"):
+            client["_coords"] = (48.92, 2.45)
+        elif cp.startswith("94"):
+            client["_coords"] = (48.80, 2.45)
+        else:
+            client["_coords"] = (48.85, 2.35)
 
     # 2. Grouper par zone géographique
     zones = defaultdict(list)
@@ -1253,12 +1291,28 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         else:
             tournees.append(current_tournee)
 
-    # 4. Calculer le temps réel avec OSRM pour chaque tournée
-    print(f"[TOURNEES] Calcul des temps réels avec OSRM pour {len(tournees)} tournées...")
+    # 4. Calculer le temps estimé pour chaque tournée (sans OSRM pour éviter rate limits)
+    print(f"[TOURNEES] Calcul des temps pour {len(tournees)} tournées...")
     result = []
     for tournee_clients in tournees:
-        temps_total, clients_avec_temps = calculate_tournee_time_real(tournee_clients)
-        result.append({"clients": clients_avec_temps, "temps_total": temps_total})
+        # Calculer le temps estimé basé sur les coordonnées
+        temps_total = 0
+        for i, client in enumerate(tournee_clients):
+            if i == 0:
+                client["temps_ajoute"] = TEMPS_ARRET
+            else:
+                prev = tournee_clients[i-1]
+                if client.get("_coords") and prev.get("_coords"):
+                    lat1, lon1 = prev["_coords"]
+                    lat2, lon2 = client["_coords"]
+                    dist_km = ((lat2 - lat1) ** 2 + (lon2 - lon1) ** 2) ** 0.5 * 111
+                    temps_trajet = int(dist_km * 2.5)  # ~25 km/h en ville
+                    client["temps_ajoute"] = min(temps_trajet, 25) + TEMPS_ARRET
+                else:
+                    client["temps_ajoute"] = TEMPS_FALLBACK + TEMPS_ARRET
+            temps_total += client["temps_ajoute"]
+
+        result.append({"clients": tournee_clients, "temps_total": temps_total})
 
     return result
 
@@ -1745,41 +1799,65 @@ def upload_to_imgbb(image_base64: str) -> dict:
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
-    prompt = f"""Analyse cette photo de bouquet de fleurs en soie.
-Réponds UNIQUEMENT en JSON valide:
-{{"couleurs": ["couleur1"], "style": "style", "taille_suggeree": "taille", "saison": "saison", "personas": ["persona1"], "description": "courte description"}}"""
+    prompt = """Analyse cette photo de bouquet de fleurs en soie.
+Réponds UNIQUEMENT en JSON valide (pas de texte avant/après):
+{"couleurs": ["couleur1", "couleur2"], "style": "romantique/moderne/champêtre/classique/bohème", "taille_suggeree": "S/M/L/XL", "saison": "printemps/été/automne/hiver/toutes", "personas": ["persona1"], "description": "courte description"}"""
 
-    response = req.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        },
-        json={
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 1024,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_base64}},
-                    {"type": "text", "text": prompt}
-                ]
-            }]
-        }
-    )
-    
-    if response.status_code != 200:
-        return {"error": response.text}
-    
-    text = response.json()["content"][0]["text"].strip()
-    if text.startswith("```"):
-        text = text.split("```")[1].replace("json", "").strip()
-    
     try:
+        response = req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 1024,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_base64}},
+                        {"type": "text", "text": prompt}
+                    ]
+                }]
+            },
+            timeout=30
+        )
+
+        print(f"[CLAUDE] Status: {response.status_code}")
+
+        if response.status_code != 200:
+            error_text = response.text
+            print(f"[CLAUDE] Error: {error_text}")
+            return {"error": f"API error {response.status_code}: {error_text[:200]}"}
+
+        data = response.json()
+        text = data.get("content", [{}])[0].get("text", "").strip()
+        print(f"[CLAUDE] Response: {text[:200]}")
+
+        # Nettoyer le JSON si entouré de markdown
+        if text.startswith("```"):
+            lines = text.split("\n")
+            json_lines = []
+            in_json = False
+            for line in lines:
+                if line.startswith("```") and not in_json:
+                    in_json = True
+                    continue
+                elif line.startswith("```") and in_json:
+                    break
+                elif in_json:
+                    json_lines.append(line)
+            text = "\n".join(json_lines)
+
         return json.loads(text)
-    except:
-        return {"error": "JSON parse failed", "raw": text}
+    except json.JSONDecodeError as e:
+        print(f"[CLAUDE] JSON parse error: {e}")
+        return {"error": f"JSON parse failed: {str(e)}", "raw": text if 'text' in dir() else ""}
+    except Exception as e:
+        print(f"[CLAUDE] Exception: {e}")
+        return {"error": f"Exception: {str(e)}"}
 
 
 def get_next_bouquet_id():
