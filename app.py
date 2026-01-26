@@ -1754,6 +1754,8 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
         "QR_Code_URL": public_url,
         "Date_Création": datetime.now().strftime("%Y-%m-%d"),
         "Saison": data.get("saison", "Toutes saisons"),
+        "Condition": 5,
+        "Rotations": 0,
     }
 
     # Champs Multiple Select (filtrer les valeurs valides)
