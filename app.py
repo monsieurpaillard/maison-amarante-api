@@ -2629,6 +2629,211 @@ def api_parse_clients():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+# ==================== INBOX - CLIENTS À PLACER ====================
+
+@app.route("/api/inbox", methods=["GET"])
+def api_inbox():
+    """Récupère les clients à placer (essais gratuits + devis acceptés)"""
+    try:
+        # 1. Récupérer les cartes Suivi Facturation avec statut "À livrer" ou "Essai gratuit"
+        cards = get_suivi_cards()
+        inbox_statuts = ["À livrer", "Essai gratuit"]
+
+        # 2. Récupérer tous les clients existants pour avoir leurs infos
+        _, _, all_clients = get_existing_clients()
+        clients_by_name = {c.get("fields", {}).get("Nom", "").upper(): c for c in all_clients}
+
+        # 3. Préparer les tournées existantes pour calculer les options de greffe
+        tournees_data = prepare_tournees()
+        tournees = tournees_data.get("tournees", [])
+
+        # 4. Grouper les clients en attente par zone pour les mini-tournées
+        clients_par_zone = defaultdict(list)
+
+        inbox_clients = []
+        for card in cards:
+            fields = card.get("fields", {})
+            statut = fields.get("Statut", "")
+
+            if statut not in inbox_statuts:
+                continue
+
+            client_name = fields.get("Nom du Client", "").strip()
+            date_creation = fields.get("Date", "")
+            notes = fields.get("Notes", "")
+            montant = fields.get("Montant", 0)
+
+            # Récupérer les infos du client depuis la table Clients
+            client_record = clients_by_name.get(client_name.upper())
+            adresse = ""
+            zone = "Autre"
+            nb_bouquets = 1
+            code_postal = ""
+
+            if client_record:
+                client_fields = client_record.get("fields", {})
+                adresse = client_fields.get("Adresse", "")
+                code_postal = extract_postal_code(adresse)
+                zone = get_geographic_zone(code_postal)
+                nb_bouquets = client_fields.get("Nb_Bouquets", 1)
+
+            # Calculer jours d'attente
+            jours_attente = 0
+            if date_creation:
+                try:
+                    date_obj = datetime.strptime(date_creation, "%Y-%m-%d")
+                    jours_attente = (datetime.now() - date_obj).days
+                except:
+                    pass
+
+            client_info = {
+                "card_id": card["id"],
+                "client_id": client_record["id"] if client_record else None,
+                "nom": client_name,
+                "statut": statut,
+                "adresse": adresse,
+                "zone": zone,
+                "code_postal": code_postal,
+                "nb_bouquets": nb_bouquets,
+                "montant": montant,
+                "notes": notes,
+                "jours_attente": jours_attente,
+                "alerte": jours_attente > 4,
+                "date_creation": date_creation
+            }
+
+            inbox_clients.append(client_info)
+            clients_par_zone[zone].append(client_info)
+
+        # 5. Calculer les options de placement pour chaque client
+        for client in inbox_clients:
+            options = []
+            zone = client["zone"]
+
+            # Option 1: Greffe - existe-t-il une tournée cette semaine dans la même zone?
+            for tournee in tournees:
+                tournee_zones = tournee.get("zones", [])
+                if zone in tournee_zones or zone == "Autre":
+                    # Vérifier s'il reste de la place (< 12 clients)
+                    if tournee.get("nb_clients", 0) < 12:
+                        temps_ajoute = 20  # ~20 min par client
+                        options.append({
+                            "type": "greffe",
+                            "tournee_id": tournee.get("numero"),
+                            "tournee_nom": f"Tournée {tournee.get('numero')} - {tournee.get('jour', 'À planifier')}",
+                            "tournee_jour": tournee.get("jour", "À planifier"),
+                            "temps_ajoute": temps_ajoute,
+                            "nb_clients_tournee": tournee.get("nb_clients", 0)
+                        })
+
+            # Option 2: Mini-tournée - y a-t-il 2+ autres clients en attente dans la même zone?
+            autres_clients_zone = [c for c in clients_par_zone.get(zone, []) if c["card_id"] != client["card_id"]]
+            if len(autres_clients_zone) >= 2:
+                options.append({
+                    "type": "mini",
+                    "clients_groupables": [{"nom": c["nom"], "adresse": c["adresse"]} for c in autres_clients_zone[:5]],
+                    "nb_clients_groupables": len(autres_clients_zone)
+                })
+
+            # Option 3: Filet - toujours disponible
+            options.append({
+                "type": "filet",
+                "description": "Livraison individuelle"
+            })
+
+            client["options"] = options
+
+        # Trier par urgence (alerte d'abord, puis par jours d'attente)
+        inbox_clients.sort(key=lambda c: (-c["alerte"], -c["jours_attente"]))
+
+        return jsonify({
+            "success": True,
+            "total": len(inbox_clients),
+            "alertes": sum(1 for c in inbox_clients if c["alerte"]),
+            "clients": inbox_clients
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/inbox/placer", methods=["POST"])
+def api_inbox_placer():
+    """Place un client dans une tournée"""
+    data = request.json
+    client_id = data.get("client_id")
+    card_id = data.get("card_id")
+    option = data.get("option")  # "greffe", "mini", "filet"
+    tournee_id = data.get("tournee_id")  # requis si greffe
+
+    if not card_id or not option:
+        return jsonify({"error": "card_id et option requis"}), 400
+
+    try:
+        result = {"success": True, "action": option}
+
+        if option == "greffe":
+            if not tournee_id:
+                return jsonify({"error": "tournee_id requis pour greffe"}), 400
+
+            # Marquer le client comme planifié
+            if client_id:
+                update_client(client_id, {"Actif": True})
+
+            # Créer une livraison liée à cette tournée
+            if client_id:
+                livraison_data = {
+                    "Client": [client_id],
+                    "Statut": "Planifiée",
+                    "Type": "Greffe",
+                    "Notes": f"Greffé sur Tournée {tournee_id}"
+                }
+                liv_result = create_livraison(livraison_data)
+                result["livraison"] = liv_result
+
+            result["message"] = f"Client greffé sur la tournée {tournee_id}"
+
+        elif option == "mini":
+            # Créer une nouvelle mini-tournée
+            if client_id:
+                update_client(client_id, {"Actif": True})
+
+                livraison_data = {
+                    "Client": [client_id],
+                    "Statut": "À planifier",
+                    "Type": "Mini-tournée"
+                }
+                liv_result = create_livraison(livraison_data)
+                result["livraison"] = liv_result
+
+            result["message"] = "Client ajouté à une nouvelle mini-tournée"
+
+        elif option == "filet":
+            # Livraison individuelle
+            if client_id:
+                update_client(client_id, {"Actif": True})
+
+                livraison_data = {
+                    "Client": [client_id],
+                    "Statut": "À planifier",
+                    "Type": "Filet"
+                }
+                liv_result = create_livraison(livraison_data)
+                result["livraison"] = liv_result
+
+            result["message"] = "Client placé en livraison filet"
+
+        # Mettre à jour le statut de la carte Suivi Facturation
+        update_suivi_card(card_id, {"Statut": "Abonnements" if option != "filet" else "Factures"})
+
+        return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 # TEMPORAIREMENT DÉSACTIVÉ - Tournées et dispatch (on y reviendra plus tard)
 # @app.route("/api/tournees", methods=["GET"])
 # def api_tournees():
