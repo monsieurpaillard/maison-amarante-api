@@ -2658,6 +2658,11 @@ def api_inbox():
             if statut not in inbox_statuts:
                 continue
 
+            # Exclure les clients déjà assignés à une tournée
+            tournee_assignee = fields.get("Tournée_Assignée", "")
+            if tournee_assignee:
+                continue
+
             client_name = fields.get("Nom du Client", "").strip()
             date_creation = fields.get("Date", "")
             notes = fields.get("Notes", "")
@@ -2824,8 +2829,9 @@ def api_inbox_placer():
 
             result["message"] = "Client placé en livraison filet"
 
-        # Mettre à jour le statut de la carte Suivi Facturation
-        update_suivi_card(card_id, {"Statut": "Abonnements" if option != "filet" else "Factures"})
+        # Marquer la carte comme assignée à une tournée (sans changer le statut commercial)
+        tournee_label = f"Tournée {tournee_id}" if option == "greffe" else ("Mini-tournée" if option == "mini" else "Filet")
+        update_suivi_card(card_id, {"Tournée_Assignée": tournee_label})
 
         return jsonify(result)
 
