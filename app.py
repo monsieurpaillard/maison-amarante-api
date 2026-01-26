@@ -1595,9 +1595,20 @@ def upload_to_imgbb(image_base64: str) -> dict:
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
-    prompt = f"""Analyse cette photo de bouquet de fleurs en soie.
-Réponds UNIQUEMENT en JSON valide:
-{{"couleurs": ["couleur1"], "style": "style", "taille_suggeree": "taille", "saison": "saison", "personas": ["persona1"], "description": "courte description"}}"""
+    prompt = """Analyse cette photo de bouquet de fleurs en soie.
+Réponds UNIQUEMENT en JSON valide avec ces champs (utilise EXACTEMENT les valeurs proposées):
+{
+  "couleurs": ["Rouge", "Blanc", "Rose", "Vert", "Jaune", "Orange", "Violet", "Bleu", "Noir"],
+  "style": "Bucolique | Zen | Moderne | Coloré | Classique",
+  "taille_suggeree": "Petit | Moyen | Grand | Masterpiece",
+  "saison": "Printemps | Été | Automne | Hiver | Toutes saisons",
+  "personas": ["Hôtel", "Restaurant", "Retail"],
+  "ambiance": "Romantique | Champêtre | Luxe | Épuré",
+  "fleurs": ["Amarante", "Anthurium", "Anémone", "Astilbe", "Chrysanthème", "Dahlia", "Hortensia", "Pivoine", "Rose"],
+  "feuillages": ["Asparagus", "Eucalyptus", "Fougère", "Pittosporum", "Ruscus"],
+  "description": "courte description du bouquet"
+}
+IMPORTANT: Pour fleurs, feuillages, personas et ambiance, utilise UNIQUEMENT les valeurs listées ci-dessus."""
 
     response = req.post(
         "https://api.anthropic.com/v1/messages",
@@ -1705,10 +1716,29 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
     public_url = f"{base_url}/b/{bouquet_id}"
     qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={public_url}"
 
-    # Convertir couleurs en string (champ texte dans Airtable)
-    couleurs = data.get("couleurs", [])
-    if isinstance(couleurs, list):
-        couleurs = ", ".join(couleurs)
+    # Options valides Airtable (Multiple Select)
+    VALID_FLEURS = ["Amarante", "Anthurium", "Anémone", "Astilbe", "Chrysanthème", "Dahlia", "Hortensia", "Pivoine", "Rose"]
+    VALID_FEUILLAGES = ["Asparagus", "Eucalyptus", "Fougère", "Pittosporum", "Ruscus"]
+    VALID_PERSONAS = ["Hôtel", "Restaurant", "Retail"]
+    VALID_AMBIANCES = ["Champêtre", "Luxe", "Romantique", "Épuré"]
+
+    # Convertir en string pour les champs texte
+    def to_string(value):
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value)
+        return value or ""
+
+    # Garder comme liste et filtrer les valeurs valides
+    def to_valid_list(value, valid_options):
+        if isinstance(value, str):
+            value = [v.strip() for v in value.split(",")]
+        if not isinstance(value, list):
+            return []
+        # Filtrer pour ne garder que les options valides (case-insensitive match)
+        valid_lower = {v.lower(): v for v in valid_options}
+        return [valid_lower[v.lower()] for v in value if v.lower() in valid_lower]
+
+    couleurs = to_string(data.get("couleurs", []))
 
     # Normaliser taille et style pour correspondre aux options Airtable
     taille_raw = data.get("taille") or data.get("taille_suggeree") or "Moyen"
@@ -1721,8 +1751,33 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
         "Couleurs": couleurs,
         "Style": normalize_style(style_raw),
         "Statut": "Disponible",
-        "QR_Code_URL": public_url
+        "QR_Code_URL": public_url,
+        "Date_Création": datetime.now().strftime("%Y-%m-%d"),
+        "Saison": data.get("saison", "Toutes saisons"),
     }
+
+    # Champs Multiple Select (filtrer les valeurs valides)
+    personas = to_valid_list(data.get("personas", []), VALID_PERSONAS)
+    if personas:
+        fields["Personas_Suggérées"] = personas
+
+    fleurs = to_valid_list(data.get("fleurs", []), VALID_FLEURS)
+    if fleurs:
+        fields["Fleurs"] = fleurs
+
+    feuillages = to_valid_list(data.get("feuillages", []), VALID_FEUILLAGES)
+    if feuillages:
+        fields["Feuillages"] = feuillages
+
+    ambiance = data.get("ambiance")
+    if ambiance:
+        ambiance_list = to_valid_list([ambiance] if isinstance(ambiance, str) else ambiance, VALID_AMBIANCES)
+        if ambiance_list:
+            fields["Ambiance"] = ambiance_list
+
+    # Ajouter notes/description si présent
+    if data.get("description"):
+        fields["Notes"] = data.get("description")
 
     if image_url:
         fields["Photo"] = [{"url": image_url}]
@@ -1736,6 +1791,20 @@ def create_bouquet_in_airtable(data: dict, image_url: str = None) -> dict:
 
     if response.status_code in [200, 201]:
         return {"success": True, "bouquet_id": bouquet_id, "public_url": public_url, "qr_image": qr_image_url}
+
+    # Fallback: si erreur de select option, réessayer sans les champs multiple select
+    if "select option" in response.text.lower() or "insufficient permissions" in response.text.lower():
+        print("[BOUQUET] Erreur select option détectée, retry sans les champs multiple select...")
+        multi_select_fields = ["Fleurs", "Feuillages", "Personas_Suggérées", "Ambiance"]
+        for field in multi_select_fields:
+            fields.pop(field, None)
+
+        response = req.post(url, headers=headers, json={"fields": fields})
+        print(f"[BOUQUET] Retry response status: {response.status_code}")
+        print(f"[BOUQUET] Retry response body: {response.text[:500]}")
+
+        if response.status_code in [200, 201]:
+            return {"success": True, "bouquet_id": bouquet_id, "public_url": public_url, "qr_image": qr_image_url, "warning": "Créé sans fleurs/feuillages (options manquantes dans Airtable)"}
 
     # Parse error message
     error_msg = "Erreur Airtable"
