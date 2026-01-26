@@ -1062,148 +1062,40 @@ def get_geographic_zone(code_postal: str) -> str:
 
 # Constantes temps pour les tournées
 TEMPS_ARRET = 3  # minutes par livraison
+TEMPS_MEME_ZONE = 5  # minutes entre clients même zone
+TEMPS_ZONES_ADJACENTES = 10  # minutes entre zones adjacentes
+TEMPS_ZONES_ELOIGNEES = 15  # minutes entre zones éloignées
 TEMPS_MAX_TOURNEE = 360  # 6 heures max
-TEMPS_FALLBACK = 10  # minutes par défaut si OSRM échoue
 
-# Cache pour les coordonnées géocodées
-_geocode_cache = {}
-
-
-def geocode_address(address: str) -> tuple:
-    """Géocode une adresse avec Nominatim (OpenStreetMap). Retourne (lat, lon) ou None."""
-    if not address:
-        return None
-
-    # Vérifier le cache
-    if address in _geocode_cache:
-        return _geocode_cache[address]
-
-    try:
-        # Ajouter "France" pour améliorer les résultats
-        query = f"{address}, France" if "france" not in address.lower() else address
-        url = "https://nominatim.openstreetmap.org/search"
-        params = {"q": query, "format": "json", "limit": 1}
-        headers = {"User-Agent": "MaisonAmarante/1.0 (contact@maisonamarante.fr)"}
-
-        response = req.get(url, params=params, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                lat = float(data[0]["lat"])
-                lon = float(data[0]["lon"])
-                _geocode_cache[address] = (lat, lon)
-                return (lat, lon)
-        elif response.status_code == 429:
-            print(f"[GEOCODE] Rate limited, using fallback")
-    except Exception as e:
-        print(f"[GEOCODE] Error for '{address}': {e}")
-
-    # Fallback: essayer d'extraire les coordonnées depuis le code postal Paris
-    cp = extract_postal_code(address)
-    if cp and cp.startswith("75"):
-        # Coordonnées approximatives par arrondissement
-        arr = int(cp[3:5]) if len(cp) >= 5 else 1
-        lat = 48.85 + (arr - 10) * 0.005
-        lon = 2.35 + (arr - 10) * 0.008
-        _geocode_cache[address] = (lat, lon)
-        return (lat, lon)
-
-    _geocode_cache[address] = None
-    return None
+# Zones adjacentes (pour calculer les temps de trajet)
+ZONES_ADJACENTES = {
+    "Paris Centre": ["Paris Rive Gauche", "Paris Nord-Ouest", "Paris Est"],
+    "Paris Rive Gauche": ["Paris Centre", "Paris Sud-Ouest", "Paris Est", "Val-de-Marne (94)"],
+    "Paris Nord-Ouest": ["Paris Centre", "Paris Nord-Est", "Hauts-de-Seine (92)"],
+    "Paris Sud-Ouest": ["Paris Rive Gauche", "Paris Nord-Ouest", "Hauts-de-Seine (92)"],
+    "Paris Est": ["Paris Centre", "Paris Rive Gauche", "Paris Nord-Est", "Val-de-Marne (94)", "Seine-St-Denis (93)"],
+    "Paris Nord-Est": ["Paris Nord-Ouest", "Paris Est", "Seine-St-Denis (93)"],
+    "Hauts-de-Seine (92)": ["Paris Nord-Ouest", "Paris Sud-Ouest"],
+    "Val-de-Marne (94)": ["Paris Rive Gauche", "Paris Est"],
+    "Seine-St-Denis (93)": ["Paris Est", "Paris Nord-Est"],
+    "Autre": []
+}
 
 
-def get_route_time_osrm(coords: list) -> int:
-    """Calcule le temps de trajet via OSRM. coords = [(lat, lon), ...]. Retourne minutes."""
-    if len(coords) < 2:
-        return 0
-
-    try:
-        # OSRM utilise lon,lat (inversé)
-        coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords])
-        url = f"https://router.project-osrm.org/route/v1/driving/{coords_str}"
-        params = {"overview": "false"}
-
-        response = req.get(url, params=params, timeout=15)
-        print(f"[OSRM] Status: {response.status_code} for {len(coords)} coords")
-
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("code") == "Ok" and data.get("routes"):
-                duration_seconds = data["routes"][0]["duration"]
-                return int(duration_seconds / 60)  # Convertir en minutes
-            else:
-                print(f"[OSRM] No route found: {data.get('code')}")
-        elif response.status_code == 429:
-            print("[OSRM] Rate limited")
-    except req.exceptions.Timeout:
-        print("[OSRM] Timeout - using fallback")
-    except Exception as e:
-        print(f"[OSRM] Error: {e}")
-
-    # Fallback: estimation basée sur distance euclidienne
-    total_time = 0
-    for i in range(1, len(coords)):
-        lat1, lon1 = coords[i-1]
-        lat2, lon2 = coords[i]
-        dist_km = ((lat2 - lat1) ** 2 + (lon2 - lon1) ** 2) ** 0.5 * 111
-        # Vitesse moyenne 25 km/h en ville = 2.4 min/km
-        total_time += int(dist_km * 2.4)
-    return max(total_time, (len(coords) - 1) * TEMPS_FALLBACK)
+def get_travel_time(zone1: str, zone2: str) -> int:
+    """Calcule le temps de trajet entre deux zones."""
+    if zone1 == zone2:
+        return TEMPS_MEME_ZONE
+    if zone2 in ZONES_ADJACENTES.get(zone1, []):
+        return TEMPS_ZONES_ADJACENTES
+    return TEMPS_ZONES_ELOIGNEES
 
 
-def calculate_tournee_time_real(clients: list) -> tuple:
-    """Calcule le temps réel d'une tournée avec OSRM.
-
-    Retourne (temps_total, clients_avec_temps) où chaque client a temps_ajoute.
-    """
-    if not clients:
-        return 0, []
-
-    # Géocoder toutes les adresses
-    coords = []
-    for client in clients:
-        coord = geocode_address(client.get("adresse", ""))
-        client["_coords"] = coord
-        if coord:
-            coords.append(coord)
-
-    # Si pas assez de coordonnées, utiliser le fallback
-    if len(coords) < 2:
-        total = 0
-        for i, client in enumerate(clients):
-            temps = TEMPS_ARRET + (TEMPS_FALLBACK if i > 0 else 0)
-            client["temps_ajoute"] = temps
-            total += temps
-        return total, clients
-
-    # Calculer le temps total avec OSRM
-    temps_trajet = get_route_time_osrm(coords)
-    temps_arrets = len(clients) * TEMPS_ARRET
-    temps_total = temps_trajet + temps_arrets
-
-    # Répartir le temps de trajet entre les clients
-    temps_trajet_par_client = temps_trajet / max(len(clients) - 1, 1)
-    for i, client in enumerate(clients):
-        if i == 0:
-            client["temps_ajoute"] = TEMPS_ARRET
-        else:
-            client["temps_ajoute"] = int(temps_trajet_par_client + TEMPS_ARRET)
-
-    return temps_total, clients
-
-
-def calculate_client_time_quick(client: dict, prev_client: dict) -> int:
-    """Calcul rapide du temps ajouté (pour le splitting initial)."""
-    # Estimation simple basée sur les coordonnées si disponibles
-    if prev_client and client.get("_coords") and prev_client.get("_coords"):
-        # Distance euclidienne approximative
-        lat1, lon1 = prev_client["_coords"]
-        lat2, lon2 = client["_coords"]
-        dist = ((lat2 - lat1) ** 2 + (lon2 - lon1) ** 2) ** 0.5
-        # ~1 degré = 111km, vitesse moyenne 20km/h en ville = 3min/km
-        temps_trajet = int(dist * 111 * 3)
-        return min(temps_trajet, 30) + TEMPS_ARRET  # Cap à 30min de trajet
-    return TEMPS_FALLBACK + TEMPS_ARRET
+def calculate_client_time(client: dict, prev_zone: str) -> int:
+    """Calcule le temps ajouté par un client (trajet + arrêt)."""
+    zone = client.get("zone", "Autre")
+    travel_time = get_travel_time(prev_zone, zone) if prev_zone else 0
+    return travel_time + TEMPS_ARRET
 
 
 def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> list:
@@ -1212,33 +1104,17 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
     Stratégie:
     1. Grouper par zone géographique
     2. Remplir chaque tournée jusqu'à ~6h (360 min)
-    3. Calculer le temps estimé (sans trop d'appels API)
+    3. Calculer le temps: trajet entre zones + temps d'arrêt par client
     """
     if not clients:
         return []
 
-    # 1. Préparer les clients avec zone (sans géocodage pour éviter rate limits)
-    print(f"[TOURNEES] Préparation de {len(clients)} clients...")
-    for client in clients:
-        client["zone"] = get_geographic_zone(client.get("code_postal", ""))
-        # Géocodage léger basé sur code postal seulement
-        cp = client.get("code_postal", "")
-        if cp.startswith("75"):
-            arr = int(cp[3:5]) if len(cp) >= 5 else 1
-            client["_coords"] = (48.85 + (arr - 10) * 0.005, 2.35 + (arr - 10) * 0.008)
-        elif cp.startswith("92"):
-            client["_coords"] = (48.88, 2.25)
-        elif cp.startswith("93"):
-            client["_coords"] = (48.92, 2.45)
-        elif cp.startswith("94"):
-            client["_coords"] = (48.80, 2.45)
-        else:
-            client["_coords"] = (48.85, 2.35)
-
-    # 2. Grouper par zone géographique
+    # Grouper par zone géographique
     zones = defaultdict(list)
     for client in clients:
-        zones[client["zone"]].append(client)
+        zone = get_geographic_zone(client.get("code_postal", ""))
+        client["zone"] = zone  # S'assurer que la zone est dans le client
+        zones[zone].append(client)
 
     # Ordre logique des zones (parcours géographique)
     zone_order = [
@@ -1254,11 +1130,11 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         "Autre"
     ]
 
-    # 3. Construire les tournées avec estimation rapide
+    # Construire les tournées avec contrainte temps
     tournees = []
     current_tournee = []
     current_time = 0
-    prev_client = None
+    prev_zone = None
 
     for zone_name in zone_order:
         zone_clients = zones.get(zone_name, [])
@@ -1269,52 +1145,37 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         zone_clients = sorted(zone_clients, key=lambda c: (c.get("code_postal", ""), c.get("adresse", "")))
 
         for client in zone_clients:
-            # Estimation rapide du temps
-            temps_ajoute = calculate_client_time_quick(client, prev_client)
+            # Calculer le temps ajouté par ce client
+            temps_ajoute = calculate_client_time(client, prev_zone)
+            client["temps_ajoute"] = temps_ajoute
 
-            # Si on dépasse le max, nouvelle tournée
+            # Si on dépasse le max avec ce client, nouvelle tournée
             if current_time + temps_ajoute > max_time and current_tournee:
-                tournees.append(current_tournee)
+                tournees.append({"clients": current_tournee, "temps_total": current_time})
                 current_tournee = []
                 current_time = 0
-                prev_client = None
-                temps_ajoute = TEMPS_ARRET
+                prev_zone = None
+                # Recalculer le temps pour ce client (premier de la nouvelle tournée)
+                temps_ajoute = TEMPS_ARRET  # Pas de trajet pour le premier
+                client["temps_ajoute"] = temps_ajoute
 
             current_tournee.append(client)
             current_time += temps_ajoute
-            prev_client = client
+            prev_zone = client.get("zone", "Autre")
 
-    # Ajouter la dernière tournée
+    # Ajouter la dernière tournée si elle n'est pas vide
     if current_tournee:
-        if current_time < 60 and tournees and len(tournees[-1]) < 25:
-            tournees[-1].extend(current_tournee)
+        # Si elle est trop petite en temps (<1h) et qu'on a d'autres tournées, tenter fusion
+        if current_time < 60 and tournees and tournees[-1]["temps_total"] + current_time <= max_time + 30:
+            # Fusionner avec la précédente
+            for c in current_tournee:
+                c["temps_ajoute"] = calculate_client_time(c, tournees[-1]["clients"][-1].get("zone") if tournees[-1]["clients"] else None)
+            tournees[-1]["clients"].extend(current_tournee)
+            tournees[-1]["temps_total"] += current_time
         else:
-            tournees.append(current_tournee)
+            tournees.append({"clients": current_tournee, "temps_total": current_time})
 
-    # 4. Calculer le temps estimé pour chaque tournée (sans OSRM pour éviter rate limits)
-    print(f"[TOURNEES] Calcul des temps pour {len(tournees)} tournées...")
-    result = []
-    for tournee_clients in tournees:
-        # Calculer le temps estimé basé sur les coordonnées
-        temps_total = 0
-        for i, client in enumerate(tournee_clients):
-            if i == 0:
-                client["temps_ajoute"] = TEMPS_ARRET
-            else:
-                prev = tournee_clients[i-1]
-                if client.get("_coords") and prev.get("_coords"):
-                    lat1, lon1 = prev["_coords"]
-                    lat2, lon2 = client["_coords"]
-                    dist_km = ((lat2 - lat1) ** 2 + (lon2 - lon1) ** 2) ** 0.5 * 111
-                    temps_trajet = int(dist_km * 2.5)  # ~25 km/h en ville
-                    client["temps_ajoute"] = min(temps_trajet, 25) + TEMPS_ARRET
-                else:
-                    client["temps_ajoute"] = TEMPS_FALLBACK + TEMPS_ARRET
-            temps_total += client["temps_ajoute"]
-
-        result.append({"clients": tournee_clients, "temps_total": temps_total})
-
-    return result
+    return tournees
 
 
 def prepare_tournees():
@@ -1799,65 +1660,41 @@ def upload_to_imgbb(image_base64: str) -> dict:
 
 
 def analyze_image_with_claude(image_base64: str, media_type: str = "image/jpeg") -> dict:
-    prompt = """Analyse cette photo de bouquet de fleurs en soie.
-Réponds UNIQUEMENT en JSON valide (pas de texte avant/après):
-{"couleurs": ["couleur1", "couleur2"], "style": "romantique/moderne/champêtre/classique/bohème", "taille_suggeree": "S/M/L/XL", "saison": "printemps/été/automne/hiver/toutes", "personas": ["persona1"], "description": "courte description"}"""
+    prompt = f"""Analyse cette photo de bouquet de fleurs en soie.
+Réponds UNIQUEMENT en JSON valide:
+{{"couleurs": ["couleur1"], "style": "style", "taille_suggeree": "taille", "saison": "saison", "personas": ["persona1"], "description": "courte description"}}"""
 
+    response = req.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        },
+        json={
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 1024,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_base64}},
+                    {"type": "text", "text": prompt}
+                ]
+            }]
+        }
+    )
+    
+    if response.status_code != 200:
+        return {"error": response.text}
+    
+    text = response.json()["content"][0]["text"].strip()
+    if text.startswith("```"):
+        text = text.split("```")[1].replace("json", "").strip()
+    
     try:
-        response = req.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-3-5-sonnet-20241022",
-                "max_tokens": 1024,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_base64}},
-                        {"type": "text", "text": prompt}
-                    ]
-                }]
-            },
-            timeout=30
-        )
-
-        print(f"[CLAUDE] Status: {response.status_code}")
-
-        if response.status_code != 200:
-            error_text = response.text
-            print(f"[CLAUDE] Error: {error_text}")
-            return {"error": f"API error {response.status_code}: {error_text[:200]}"}
-
-        data = response.json()
-        text = data.get("content", [{}])[0].get("text", "").strip()
-        print(f"[CLAUDE] Response: {text[:200]}")
-
-        # Nettoyer le JSON si entouré de markdown
-        if text.startswith("```"):
-            lines = text.split("\n")
-            json_lines = []
-            in_json = False
-            for line in lines:
-                if line.startswith("```") and not in_json:
-                    in_json = True
-                    continue
-                elif line.startswith("```") and in_json:
-                    break
-                elif in_json:
-                    json_lines.append(line)
-            text = "\n".join(json_lines)
-
         return json.loads(text)
-    except json.JSONDecodeError as e:
-        print(f"[CLAUDE] JSON parse error: {e}")
-        return {"error": f"JSON parse failed: {str(e)}", "raw": text if 'text' in dir() else ""}
-    except Exception as e:
-        print(f"[CLAUDE] Exception: {e}")
-        return {"error": f"Exception: {str(e)}"}
+    except:
+        return {"error": "JSON parse failed", "raw": text}
 
 
 def get_next_bouquet_id():
