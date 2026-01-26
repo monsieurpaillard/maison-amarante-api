@@ -1607,7 +1607,7 @@ Réponds UNIQUEMENT en JSON valide:
             "content-type": "application/json"
         },
         json={
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-3-5-sonnet-20241022",
             "max_tokens": 1024,
             "messages": [{
                 "role": "user",
@@ -2558,54 +2558,55 @@ def api_parse_clients():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-@app.route("/api/tournees", methods=["GET"])
-def api_tournees():
-    """Prépare la tournée optimisée de la semaine"""
-    try:
-        results = prepare_tournees()
-        return jsonify(results)
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+# TEMPORAIREMENT DÉSACTIVÉ - Tournées et dispatch (on y reviendra plus tard)
+# @app.route("/api/tournees", methods=["GET"])
+# def api_tournees():
+#     """Prépare la tournée optimisée de la semaine"""
+#     try:
+#         results = prepare_tournees()
+#         return jsonify(results)
+#     except Exception as e:
+#         import traceback
+#         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-@app.route("/api/dispatch/tournees", methods=["GET"])
-def api_dispatch_tournees():
-    """Retourne la liste des tournées pour le dispatch"""
-    try:
-        results = get_tournees_summary()
-        return jsonify(results)
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+# @app.route("/api/dispatch/tournees", methods=["GET"])
+# def api_dispatch_tournees():
+#     """Retourne la liste des tournées pour le dispatch"""
+#     try:
+#         results = get_tournees_summary()
+#         return jsonify(results)
+#     except Exception as e:
+#         import traceback
+#         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-@app.route("/api/dispatch/<int:tournee_num>", methods=["GET"])
-def api_dispatch_tournee(tournee_num):
-    """Génère des suggestions de dispatch pour une tournée spécifique"""
-    try:
-        results = dispatch_for_tournee(tournee_num)
-        return jsonify(results)
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+# @app.route("/api/dispatch/<int:tournee_num>", methods=["GET"])
+# def api_dispatch_tournee(tournee_num):
+#     """Génère des suggestions de dispatch pour une tournée spécifique"""
+#     try:
+#         results = dispatch_for_tournee(tournee_num)
+#         return jsonify(results)
+#     except Exception as e:
+#         import traceback
+#         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
-@app.route("/api/dispatch/valider", methods=["POST"])
-def api_dispatch_valider():
-    """Valide l'assignation d'un bouquet à un client"""
-    data = request.json
-    client_id = data.get("client_id")
-    bouquet_record_id = data.get("bouquet_record_id")
+# @app.route("/api/dispatch/valider", methods=["POST"])
+# def api_dispatch_valider():
+#     """Valide l'assignation d'un bouquet à un client"""
+#     data = request.json
+#     client_id = data.get("client_id")
+#     bouquet_record_id = data.get("bouquet_record_id")
 
-    if not client_id or not bouquet_record_id:
-        return jsonify({"error": "client_id et bouquet_record_id requis"}), 400
+#     if not client_id or not bouquet_record_id:
+#         return jsonify({"error": "client_id et bouquet_record_id requis"}), 400
 
-    try:
-        result = valider_dispatch(client_id, bouquet_record_id)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+#     try:
+#         result = valider_dispatch(client_id, bouquet_record_id)
+#         return jsonify(result)
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/facturer", methods=["POST"])
