@@ -2668,19 +2668,25 @@ def api_inbox():
             notes = fields.get("Notes", "")
             montant = fields.get("Montant", 0)
 
-            # Récupérer les infos du client depuis la table Clients
-            client_record = clients_by_name.get(client_name.upper())
-            adresse = ""
+            # Adresse en priorité depuis Suivi Facturation, sinon depuis table Clients
+            adresse = fields.get("Adresse", "")
             zone = "Autre"
             nb_bouquets = 1
             code_postal = ""
 
+            # Récupérer les infos complémentaires depuis la table Clients
+            client_record = clients_by_name.get(client_name.upper())
             if client_record:
                 client_fields = client_record.get("fields", {})
-                adresse = client_fields.get("Adresse", "")
+                # Si pas d'adresse dans Suivi Facturation, prendre celle de Clients
+                if not adresse:
+                    adresse = client_fields.get("Adresse", "")
+                nb_bouquets = client_fields.get("Nb_Bouquets", 1)
+
+            # Calculer zone depuis l'adresse
+            if adresse:
                 code_postal = extract_postal_code(adresse)
                 zone = get_geographic_zone(code_postal)
-                nb_bouquets = client_fields.get("Nb_Bouquets", 1)
 
             # Calculer jours d'attente
             jours_attente = 0
