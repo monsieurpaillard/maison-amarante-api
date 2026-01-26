@@ -855,6 +855,7 @@ def sync_suivi_to_clients(skip_parsing=False):
         statut = fields.get("Statut", "")
         notes = fields.get("Notes", "")
         pennylane_id = str(fields.get("ID Pennylane", ""))
+        adresse = fields.get("Adresse", "")  # Récupérer l'adresse directement
 
         if not client_name:
             continue
@@ -865,7 +866,8 @@ def sync_suivi_to_clients(skip_parsing=False):
                 "client_name": client_name,
                 "statut": statut,
                 "notes": notes,
-                "pennylane_id": pennylane_id
+                "pennylane_id": pennylane_id,
+                "adresse": adresse  # Stocker l'adresse
             })
 
     # 2. Parsing désactivé par défaut (trop lent pour la sync)
@@ -884,6 +886,7 @@ def sync_suivi_to_clients(skip_parsing=False):
         client_name = card_info["client_name"]
         statut = card_info["statut"]
         pennylane_id = card_info["pennylane_id"]
+        adresse = card_info.get("adresse", "")
 
         existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
 
@@ -897,6 +900,10 @@ def sync_suivi_to_clients(skip_parsing=False):
 
         if pennylane_id:
             client_fields["ID_Pennylane"] = pennylane_id
+
+        # Copier l'adresse directement (pas de parsing)
+        if adresse:
+            client_fields["Adresse"] = adresse
 
         # Ajouter les infos parsées par Claude
         if parsed.get("persona"):
@@ -922,8 +929,7 @@ def sync_suivi_to_clients(skip_parsing=False):
                 client_fields["Tailles_Demandées"] = tailles
         if parsed.get("creneau_prefere"):
             client_fields["Créneau_Préféré"] = parsed["creneau_prefere"]
-        if parsed.get("adresse"):
-            client_fields["Adresse"] = parsed["adresse"]
+        # Adresse: copiée directement depuis Suivi Facturation (pas de parsing)
         if parsed.get("instructions_speciales"):
             client_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
 
@@ -2616,9 +2622,7 @@ def api_parse_clients():
                 continue
 
             update_fields = {}
-            # Champs texte libres
-            if parsed.get("adresse"):
-                update_fields["Adresse"] = parsed["adresse"]
+            # Champs texte libres (adresse exclue - copiée directement depuis Suivi Facturation)
             if parsed.get("creneau_prefere"):
                 update_fields["Créneau_Préféré"] = str(parsed["creneau_prefere"])
             if parsed.get("instructions_speciales"):
