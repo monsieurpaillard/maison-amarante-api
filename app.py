@@ -115,6 +115,46 @@ def pennylane_get_customer_by_id(customer_id: int) -> dict:
     return response.json().get("customer", response.json())
 
 
+def extract_pennylane_address(customer: dict) -> str:
+    """Extrait l'adresse d'un customer Pennylane.
+
+    Essaie plusieurs structures possibles dans l'API Pennylane.
+    """
+    if not customer:
+        return ""
+
+    # Essayer billing_address ou delivery_address ou address
+    address_obj = customer.get("billing_address") or customer.get("delivery_address") or customer.get("address") or {}
+
+    if isinstance(address_obj, str):
+        return address_obj.strip()
+
+    if isinstance(address_obj, dict):
+        parts = []
+        # Numéro + rue
+        street = address_obj.get("address") or address_obj.get("street") or address_obj.get("line1") or ""
+        if street:
+            parts.append(street)
+
+        line2 = address_obj.get("address_line_2") or address_obj.get("line2") or ""
+        if line2:
+            parts.append(line2)
+
+        # Code postal + ville
+        postal = address_obj.get("postal_code") or address_obj.get("zipcode") or address_obj.get("zip") or ""
+        city = address_obj.get("city") or ""
+        if postal or city:
+            parts.append(f"{postal} {city}".strip())
+
+        country = address_obj.get("country") or ""
+        if country and country.lower() not in ["france", "fr"]:
+            parts.append(country)
+
+        return "\n".join(parts) if parts else ""
+
+    return ""
+
+
 def extract_pennylane_notes(item: dict) -> str:
     """Extrait les commentaires/notes d'un objet Pennylane (devis, facture, abonnement).
 
@@ -677,11 +717,14 @@ def sync_pennylane_to_suivi():
             customer_name = extract_customer_name_from_label(quote.get("label", ""), quote.get("filename", ""))
             amount = quote.get("amount", 0)
 
-            # Extraire les notes du customer associé
+            # Extraire les notes et l'adresse du customer associé
             customer_id = quote.get("customer", {}).get("id")
             customer_notes = ""
+            customer_address = ""
             if customer_id and customer_id in customers_by_id:
-                customer_notes = customers_by_id[customer_id].get("notes") or ""
+                customer = customers_by_id[customer_id]
+                customer_notes = customer.get("notes") or ""
+                customer_address = extract_pennylane_address(customer)
 
             # Combiner notes du devis + notes du customer
             quote_notes = extract_pennylane_notes(quote)
@@ -696,6 +739,8 @@ def sync_pennylane_to_suivi():
             }
             if notes:
                 card_fields["Notes"] = notes
+            if customer_address:
+                card_fields["Adresse"] = customer_address
 
             result = create_suivi_card(card_fields)
             if result["success"]:
@@ -710,11 +755,14 @@ def sync_pennylane_to_suivi():
             customer_name = extract_customer_name_from_label(invoice.get("label", ""), invoice.get("filename", ""))
             amount = invoice.get("amount", invoice.get("currency_amount", 0))
 
-            # Extraire les notes du customer associé
+            # Extraire les notes et l'adresse du customer associé
             customer_id = invoice.get("customer", {}).get("id")
             customer_notes = ""
+            customer_address = ""
             if customer_id and customer_id in customers_by_id:
-                customer_notes = customers_by_id[customer_id].get("notes") or ""
+                customer = customers_by_id[customer_id]
+                customer_notes = customer.get("notes") or ""
+                customer_address = extract_pennylane_address(customer)
 
             # Combiner notes de la facture + notes du customer
             invoice_notes = extract_pennylane_notes(invoice)
@@ -729,6 +777,8 @@ def sync_pennylane_to_suivi():
             }
             if notes:
                 card_fields["Notes"] = notes
+            if customer_address:
+                card_fields["Adresse"] = customer_address
 
             result = create_suivi_card(card_fields)
             if result["success"]:
@@ -742,11 +792,14 @@ def sync_pennylane_to_suivi():
         if sub_id and sub_id not in existing_by_pennylane_id:
             customer_name = extract_customer_name_from_label(sub.get("label", ""), sub.get("filename", ""))
 
-            # Extraire les notes du customer associé
+            # Extraire les notes et l'adresse du customer associé
             customer_id = sub.get("customer", {}).get("id")
             customer_notes = ""
+            customer_address = ""
             if customer_id and customer_id in customers_by_id:
-                customer_notes = customers_by_id[customer_id].get("notes") or ""
+                customer = customers_by_id[customer_id]
+                customer_notes = customer.get("notes") or ""
+                customer_address = extract_pennylane_address(customer)
 
             # Combiner notes de l'abonnement + notes du customer
             sub_notes = extract_pennylane_notes(sub)
@@ -760,6 +813,8 @@ def sync_pennylane_to_suivi():
             }
             if notes:
                 card_fields["Notes"] = notes
+            if customer_address:
+                card_fields["Adresse"] = customer_address
 
             result = create_suivi_card(card_fields)
             if result["success"]:
