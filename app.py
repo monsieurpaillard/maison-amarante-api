@@ -2659,7 +2659,7 @@ def api_inbox():
                 continue
 
             # Exclure les clients déjà assignés à une tournée
-            tournee_assignee = fields.get("Tournée_Assignée", "")
+            tournee_assignee = fields.get("Tournée_assignée", "")
             if tournee_assignee:
                 continue
 
@@ -2831,7 +2831,7 @@ def api_inbox_placer():
 
         # Marquer la carte comme assignée à une tournée (sans changer le statut commercial)
         tournee_label = f"Tournée {tournee_id}" if option == "greffe" else ("Mini-tournée" if option == "mini" else "Filet")
-        update_suivi_card(card_id, {"Tournée_Assignée": tournee_label})
+        update_suivi_card(card_id, {"Tournée_assignée": tournee_label})
 
         return jsonify(result)
 
