@@ -1060,51 +1060,14 @@ def get_geographic_zone(code_postal: str) -> str:
     return "Autre"
 
 
-# Constantes temps pour les tournées
-TEMPS_ARRET = 3  # minutes par livraison
-TEMPS_MEME_ZONE = 5  # minutes entre clients même zone
-TEMPS_ZONES_ADJACENTES = 10  # minutes entre zones adjacentes
-TEMPS_ZONES_ELOIGNEES = 15  # minutes entre zones éloignées
-TEMPS_MAX_TOURNEE = 360  # 6 heures max
-
-# Zones adjacentes (pour calculer les temps de trajet)
-ZONES_ADJACENTES = {
-    "Paris Centre": ["Paris Rive Gauche", "Paris Nord-Ouest", "Paris Est"],
-    "Paris Rive Gauche": ["Paris Centre", "Paris Sud-Ouest", "Paris Est", "Val-de-Marne (94)"],
-    "Paris Nord-Ouest": ["Paris Centre", "Paris Nord-Est", "Hauts-de-Seine (92)"],
-    "Paris Sud-Ouest": ["Paris Rive Gauche", "Paris Nord-Ouest", "Hauts-de-Seine (92)"],
-    "Paris Est": ["Paris Centre", "Paris Rive Gauche", "Paris Nord-Est", "Val-de-Marne (94)", "Seine-St-Denis (93)"],
-    "Paris Nord-Est": ["Paris Nord-Ouest", "Paris Est", "Seine-St-Denis (93)"],
-    "Hauts-de-Seine (92)": ["Paris Nord-Ouest", "Paris Sud-Ouest"],
-    "Val-de-Marne (94)": ["Paris Rive Gauche", "Paris Est"],
-    "Seine-St-Denis (93)": ["Paris Est", "Paris Nord-Est"],
-    "Autre": []
-}
-
-
-def get_travel_time(zone1: str, zone2: str) -> int:
-    """Calcule le temps de trajet entre deux zones."""
-    if zone1 == zone2:
-        return TEMPS_MEME_ZONE
-    if zone2 in ZONES_ADJACENTES.get(zone1, []):
-        return TEMPS_ZONES_ADJACENTES
-    return TEMPS_ZONES_ELOIGNEES
-
-
-def calculate_client_time(client: dict, prev_zone: str) -> int:
-    """Calcule le temps ajouté par un client (trajet + arrêt)."""
-    zone = client.get("zone", "Autre")
-    travel_time = get_travel_time(prev_zone, zone) if prev_zone else 0
-    return travel_time + TEMPS_ARRET
-
-
-def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> list:
-    """Divise les clients en plusieurs tournées avec contrainte temps (6h max).
+def split_into_tournees(clients: list, max_clients_per_tournee: int = 12) -> list:
+    """Divise les clients en plusieurs tournées réalistes.
 
     Stratégie:
     1. Grouper par zone géographique
-    2. Remplir chaque tournée jusqu'à ~6h (360 min)
-    3. Calculer le temps: trajet entre zones + temps d'arrêt par client
+    2. Chaque zone devient une tournée si elle a assez de clients
+    3. Les petites zones sont fusionnées avec les zones adjacentes
+    4. Maximum 12-15 clients par tournée (réaliste pour une journée à Paris)
     """
     if not clients:
         return []
@@ -1113,7 +1076,6 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
     zones = defaultdict(list)
     for client in clients:
         zone = get_geographic_zone(client.get("code_postal", ""))
-        client["zone"] = zone  # S'assurer que la zone est dans le client
         zones[zone].append(client)
 
     # Ordre logique des zones (parcours géographique)
@@ -1130,11 +1092,9 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         "Autre"
     ]
 
-    # Construire les tournées avec contrainte temps
+    # Construire les tournées
     tournees = []
     current_tournee = []
-    current_time = 0
-    prev_zone = None
 
     for zone_name in zone_order:
         zone_clients = zones.get(zone_name, [])
@@ -1145,35 +1105,20 @@ def split_into_tournees(clients: list, max_time: int = TEMPS_MAX_TOURNEE) -> lis
         zone_clients = sorted(zone_clients, key=lambda c: (c.get("code_postal", ""), c.get("adresse", "")))
 
         for client in zone_clients:
-            # Calculer le temps ajouté par ce client
-            temps_ajoute = calculate_client_time(client, prev_zone)
-            client["temps_ajoute"] = temps_ajoute
-
-            # Si on dépasse le max avec ce client, nouvelle tournée
-            if current_time + temps_ajoute > max_time and current_tournee:
-                tournees.append({"clients": current_tournee, "temps_total": current_time})
-                current_tournee = []
-                current_time = 0
-                prev_zone = None
-                # Recalculer le temps pour ce client (premier de la nouvelle tournée)
-                temps_ajoute = TEMPS_ARRET  # Pas de trajet pour le premier
-                client["temps_ajoute"] = temps_ajoute
-
             current_tournee.append(client)
-            current_time += temps_ajoute
-            prev_zone = client.get("zone", "Autre")
+
+            # Si on atteint le max, créer une nouvelle tournée
+            if len(current_tournee) >= max_clients_per_tournee:
+                tournees.append(current_tournee)
+                current_tournee = []
 
     # Ajouter la dernière tournée si elle n'est pas vide
     if current_tournee:
-        # Si elle est trop petite en temps (<1h) et qu'on a d'autres tournées, tenter fusion
-        if current_time < 60 and tournees and tournees[-1]["temps_total"] + current_time <= max_time + 30:
-            # Fusionner avec la précédente
-            for c in current_tournee:
-                c["temps_ajoute"] = calculate_client_time(c, tournees[-1]["clients"][-1].get("zone") if tournees[-1]["clients"] else None)
-            tournees[-1]["clients"].extend(current_tournee)
-            tournees[-1]["temps_total"] += current_time
+        # Si elle est trop petite et qu'on a d'autres tournées, fusionner avec la précédente si possible
+        if len(current_tournee) < 5 and tournees and len(tournees[-1]) + len(current_tournee) <= max_clients_per_tournee + 3:
+            tournees[-1].extend(current_tournee)
         else:
-            tournees.append({"clients": current_tournee, "temps_total": current_time})
+            tournees.append(current_tournee)
 
     return tournees
 
@@ -1214,28 +1159,20 @@ def prepare_tournees():
             "message": "Aucun client actif avec adresse"
         }
 
-    # Diviser en plusieurs tournées (contrainte temps: 6h max)
-    tournees_data = split_into_tournees(clients_to_deliver, max_time=TEMPS_MAX_TOURNEE)
+    # Diviser en plusieurs tournées
+    tournees_clients = split_into_tournees(clients_to_deliver, max_clients_per_tournee=12)
 
     # Jours de livraison possibles (mardi et jeudi)
-    delivery_days = get_delivery_days(len(tournees_data))
+    delivery_days = get_delivery_days(len(tournees_clients))
 
     # Construire les tournées avec leurs infos
     tournees = []
-    for i, tournee_data in enumerate(tournees_data):
-        clients = tournee_data["clients"]
-        temps_total = tournee_data["temps_total"]
-
+    for i, clients in enumerate(tournees_clients):
         # Optimiser l'ordre dans chaque tournée
         optimized = optimize_route_order(clients)
 
         # Zones couvertes
         zones_couvertes = list(set(c.get("zone", "Autre") for c in optimized))
-
-        # Formater le temps estimé
-        heures = temps_total // 60
-        minutes = temps_total % 60
-        temps_formate = f"{heures}h{minutes:02d}" if heures > 0 else f"{minutes}min"
 
         tournees.append({
             "numero": i + 1,
@@ -1245,9 +1182,7 @@ def prepare_tournees():
             "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized),
             "zones": zones_couvertes,
             "google_maps_url": generate_google_maps_url(optimized),
-            "temps_estime_min": temps_total,
-            "temps_max": TEMPS_MAX_TOURNEE,
-            "temps_formate": temps_formate
+            "duree_estimee": f"{len(optimized) * 20}min"  # ~20min par client (trajet + livraison)
         })
 
     return {
@@ -1672,7 +1607,7 @@ Réponds UNIQUEMENT en JSON valide:
             "content-type": "application/json"
         },
         json={
-            "model": "claude-3-5-sonnet-20241022",
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 1024,
             "messages": [{
                 "role": "user",
