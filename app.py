@@ -1295,16 +1295,136 @@ def get_zone_order(code_postal: str) -> int:
     return 999
 
 
+def geocode_address(address: str) -> tuple:
+    """Géocode une adresse via api-adresse.data.gouv.fr.
+
+    Returns:
+        tuple (lat, lng) ou None si échec
+    """
+    import urllib.parse
+
+    try:
+        # Nettoyer l'adresse
+        clean_address = address.replace("\n", " ").strip()
+        encoded = urllib.parse.quote(clean_address)
+        url = f"https://api-adresse.data.gouv.fr/search/?q={encoded}&limit=1"
+
+        response = req.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            features = data.get("features", [])
+            if features:
+                coords = features[0].get("geometry", {}).get("coordinates", [])
+                if len(coords) >= 2:
+                    # L'API retourne [lng, lat], on inverse
+                    return (coords[1], coords[0])
+    except Exception as e:
+        print(f"[GEOCODE] Error for {address[:30]}...: {e}")
+
+    return None
+
+
+def haversine_distance(coord1: tuple, coord2: tuple) -> float:
+    """Calcule la distance en km entre deux coordonnées GPS."""
+    import math
+
+    lat1, lon1 = coord1
+    lat2, lon2 = coord2
+
+    R = 6371  # Rayon de la Terre en km
+
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+
+    return R * c
+
+
 def optimize_route_order(clients: list) -> list:
     """Optimise l'ordre des clients pour minimiser le temps de trajet.
-    Algorithme simple: tri par zone géographique (code postal).
+
+    Utilise l'algorithme du plus proche voisin (nearest neighbor):
+    1. Géocode toutes les adresses
+    2. Part d'un point central (Paris centre)
+    3. À chaque étape, choisit le point non visité le plus proche
     """
-    # Trier par zone géographique
-    return sorted(clients, key=lambda c: (
-        get_zone_order(c.get("code_postal", "")),
-        c.get("code_postal", ""),
-        c.get("adresse", "")
-    ))
+    if len(clients) <= 1:
+        return clients
+
+    # Géocoder toutes les adresses
+    coords = {}
+    for i, client in enumerate(clients):
+        adresse = client.get("adresse", "")
+        coord = geocode_address(adresse)
+        if coord:
+            coords[i] = coord
+        else:
+            # Fallback: utiliser le code postal pour une estimation grossière
+            cp = client.get("code_postal", "")
+            coords[i] = get_approx_coords_from_postal(cp)
+
+    # Point de départ: Paris centre (Place de la Concorde)
+    start_point = (48.8656, 2.3212)
+
+    # Algorithme du plus proche voisin
+    unvisited = set(range(len(clients)))
+    route = []
+    current_pos = start_point
+
+    while unvisited:
+        # Trouver le point non visité le plus proche
+        nearest = None
+        nearest_dist = float('inf')
+
+        for i in unvisited:
+            if coords[i]:
+                dist = haversine_distance(current_pos, coords[i])
+                if dist < nearest_dist:
+                    nearest_dist = dist
+                    nearest = i
+
+        if nearest is not None:
+            route.append(nearest)
+            current_pos = coords[nearest]
+            unvisited.remove(nearest)
+        else:
+            # Si pas de coordonnées, ajouter à la fin
+            remaining = list(unvisited)
+            route.extend(remaining)
+            break
+
+    # Reconstruire la liste dans l'ordre optimisé
+    return [clients[i] for i in route]
+
+
+def get_approx_coords_from_postal(code_postal: str) -> tuple:
+    """Retourne des coordonnées approximatives basées sur le code postal."""
+    # Coordonnées approximatives pour les arrondissements de Paris et banlieue
+    paris_coords = {
+        "75001": (48.8606, 2.3472), "75002": (48.8683, 2.3431), "75003": (48.8637, 2.3615),
+        "75004": (48.8546, 2.3572), "75005": (48.8463, 2.3472), "75006": (48.8510, 2.3323),
+        "75007": (48.8566, 2.3150), "75008": (48.8744, 2.3106), "75009": (48.8766, 2.3372),
+        "75010": (48.8758, 2.3599), "75011": (48.8593, 2.3794), "75012": (48.8413, 2.3876),
+        "75013": (48.8322, 2.3561), "75014": (48.8331, 2.3264), "75015": (48.8421, 2.2986),
+        "75016": (48.8637, 2.2769), "75017": (48.8867, 2.3106), "75018": (48.8925, 2.3444),
+        "75019": (48.8867, 2.3822), "75020": (48.8638, 2.3986),
+    }
+
+    if code_postal in paris_coords:
+        return paris_coords[code_postal]
+
+    # Banlieue: estimation grossière
+    if code_postal.startswith("92"):
+        return (48.85, 2.22)  # Hauts-de-Seine (ouest)
+    if code_postal.startswith("93"):
+        return (48.92, 2.45)  # Seine-Saint-Denis (nord-est)
+    if code_postal.startswith("94"):
+        return (48.78, 2.42)  # Val-de-Marne (sud-est)
+
+    # Fallback: centre de Paris
+    return (48.8566, 2.3522)
 
 
 def generate_google_maps_url(clients: list, start_address: str = None) -> str:
