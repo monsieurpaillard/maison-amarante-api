@@ -2194,7 +2194,7 @@ def bouquet_page(bouquet_id):
 # API Routes
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "Maison Amarante API v4"})
+    return jsonify({"status": "ok", "service": "Maison Amarante API v5", "tournees_enabled": True})
 
 
 # Config budget (stockage simple en fichier)
