@@ -1477,12 +1477,20 @@ def prepare_tournees():
             # Récupérer TOUTES les adresses de ce client
             toutes_adresses = get_client_addresses(client_id)
 
-            # Si le client a plusieurs adresses, créer un stop par adresse
+            # Si le client a plusieurs adresses, créer un stop par adresse unique
             if toutes_adresses:
+                # Dédupliquer les adresses (en normalisant pour ignorer les différences de formatage)
+                seen_addresses = set()
                 for addr in toutes_adresses:
                     adresse = addr.get("adresse", "")
                     if not adresse:
                         continue
+
+                    # Normaliser l'adresse pour détecter les doublons
+                    normalized = adresse.upper().replace("\n", " ").strip()
+                    if normalized in seen_addresses:
+                        continue
+                    seen_addresses.add(normalized)
 
                     clients_to_deliver.append({
                         "id": client_id,
