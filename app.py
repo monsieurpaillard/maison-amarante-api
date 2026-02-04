@@ -1427,6 +1427,85 @@ def get_approx_coords_from_postal(code_postal: str) -> tuple:
     return (48.8566, 2.3522)
 
 
+def optimize_route_with_claude(stops: list) -> list:
+    """Utilise Claude pour optimiser l'ordre des stops d'une tournée.
+
+    Args:
+        stops: liste de dicts avec {nom, adresse, adresse_label, code_postal, zone, ...}
+
+    Returns:
+        La même liste réordonnée de façon optimale
+    """
+    if not stops or len(stops) <= 2:
+        return stops
+
+    # Construire la liste des adresses pour Claude
+    addresses_text = "\n".join([
+        f"{i+1}. {s.get('nom', 'Client')} - {s.get('adresse', '').replace(chr(10), ' ')}"
+        for i, s in enumerate(stops)
+    ])
+
+    prompt = f"""Tu es un expert en logistique de livraison à Paris et Île-de-France.
+
+Voici une liste de {len(stops)} adresses de livraison à optimiser pour minimiser le temps de trajet total.
+Le point de départ est le centre de Paris (Place de la Concorde).
+
+ADRESSES À LIVRER:
+{addresses_text}
+
+RÈGLES D'OPTIMISATION:
+- Regrouper les adresses proches géographiquement
+- Éviter les allers-retours inutiles
+- Tenir compte de la circulation parisienne (privilégier un parcours fluide)
+- Terminer par les adresses en banlieue (92, 93, 94)
+- Pour Paris, suivre une logique géographique (ex: ouest vers est, ou spirale depuis le centre)
+
+RÉPONDS UNIQUEMENT avec la liste des numéros dans l'ordre optimal, séparés par des virgules.
+Exemple de réponse: 3, 1, 5, 2, 4
+
+ORDRE OPTIMAL:"""
+
+    try:
+        response = req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 200,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            text = result.get("content", [{}])[0].get("text", "").strip()
+            print(f"[OPTIMIZE] Claude response: {text}")
+
+            # Parser la réponse (ex: "3, 1, 5, 2, 4")
+            import re
+            numbers = re.findall(r'\d+', text)
+            order = [int(n) - 1 for n in numbers]  # Convertir en indices 0-based
+
+            # Vérifier que tous les indices sont valides
+            if len(order) == len(stops) and all(0 <= i < len(stops) for i in order):
+                return [stops[i] for i in order]
+            else:
+                print(f"[OPTIMIZE] Invalid order from Claude, using fallback")
+        else:
+            print(f"[OPTIMIZE] Claude API error: {response.text}")
+
+    except Exception as e:
+        print(f"[OPTIMIZE] Error: {e}")
+
+    # Fallback: utiliser l'algorithme nearest neighbor
+    return optimize_route_order(stops)
+
+
 def generate_google_maps_url(clients: list, start_address: str = None) -> str:
     """Génère un lien Google Maps avec l'itinéraire optimisé.
 
@@ -3530,6 +3609,47 @@ def api_tournees():
     try:
         results = prepare_tournees()
         return jsonify(results)
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/tournees/optimize", methods=["POST"])
+def api_tournees_optimize():
+    """Optimise l'ordre des stops d'une tournée avec Claude IA.
+
+    Body JSON:
+        stops: liste des stops à optimiser [{nom, adresse, ...}, ...]
+
+    Returns:
+        La liste des stops réordonnée de façon optimale
+    """
+    try:
+        data = request.json or {}
+        stops = data.get("stops", [])
+
+        if not stops:
+            return jsonify({"error": "Aucun stop à optimiser"}), 400
+
+        print(f"[OPTIMIZE] Optimizing {len(stops)} stops with Claude...")
+        optimized = optimize_route_with_claude(stops)
+
+        # Recalculer les infos de la tournée
+        temps_estime_min = len(optimized) * 20
+        zones_couvertes = list(set(c.get("zone", "Autre") for c in optimized))
+
+        return jsonify({
+            "success": True,
+            "message": f"Tournée optimisée par IA ({len(optimized)} stops)",
+            "stops": optimized,
+            "nb_stops": len(optimized),
+            "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized),
+            "zones": zones_couvertes,
+            "duree_estimee": f"{temps_estime_min}min",
+            "temps_estime_min": temps_estime_min,
+            "google_maps_url": generate_google_maps_url(optimized)
+        })
+
     except Exception as e:
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
