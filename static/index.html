@@ -1431,7 +1431,7 @@
                                         🗺️ Ouvrir dans Google Maps
                                     </a>
                                     <button class="btn" onclick="optimizeTourneeWithAI(${idx}, ${JSON.stringify(clients).replace(/"/g, '&quot;')})" style="background: #e84393; padding: 10px 15px;" id="optimizeBtn${idx}">
-                                        🤖 Optimiser avec IA
+                                        🗺️ Optimiser (Google Maps)
                                     </button>
                                 </div>
                                 <div id="optimizeLoading${idx}" style="display: none; text-align: center; padding: 10px; color: #666;">
@@ -1495,10 +1495,18 @@
                 // Mettre à jour l'affichage avec les stops optimisés
                 const optimizedClients = data.stops || [];
                 const color = tourneeColors[tourneeIdx % tourneeColors.length];
+                const isGoogleOptimized = data.optimized_by_google;
+                const duree = data.duree_totale || '';
+                const distance = data.distance_totale || '';
+
+                // Afficher un message avec les infos de trajet
+                const infoText = isGoogleOptimized
+                    ? `✅ Optimisé par Google Maps${duree ? ' · ' + duree : ''}${distance ? ' · ' + distance : ''}`
+                    : `⚠️ Optimisation locale (clé Google Maps non configurée)`;
 
                 // Mettre à jour la liste des clients dans le details
                 details.innerHTML = `
-                    <summary style="cursor: pointer; color: #666; font-size: 0.9em;">✅ Voir les ${optimizedClients.length} clients (optimisé par IA)</summary>
+                    <summary style="cursor: pointer; color: #666; font-size: 0.9em;">${infoText}</summary>
                     <div style="margin-top: 10px;">
                         ${optimizedClients.map((c, i) => `
                             <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
@@ -1506,9 +1514,9 @@
                                 <div style="flex: 1; min-width: 0;">
                                     <div style="font-weight: 600; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${c.nom} ${c.adresse_label ? '(' + c.adresse_label + ')' : ''}</div>
                                     <div style="font-size: 0.8em; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${c.adresse?.replace(/\\n/g, ' ') || 'Pas d\\'adresse'}</div>
-                                    <div style="font-size: 0.75em; color: #999;">${c.nb_bouquets} bouquet(s) ${c.creneau ? '· ' + c.creneau : ''}</div>
+                                    <div style="font-size: 0.75em; color: #999;">${c.nb_bouquets} bouquet(s)${c.temps_trajet ? ' · 🚗 ' + c.temps_trajet : ''}${c.creneau ? ' · ' + c.creneau : ''}</div>
                                 </div>
-                                <span style="background: #f0f0f0; color: #666; padding: 2px 6px; border-radius: 10px; font-size: 0.7em; font-weight: 600;">+${c.temps_ajoute || 20}min</span>
+                                ${c.distance_trajet ? `<span style="background: #f0f0f0; color: #666; padding: 2px 6px; border-radius: 10px; font-size: 0.7em; font-weight: 600;">${c.distance_trajet}</span>` : ''}
                             </div>
                         `).join('')}
                     </div>
@@ -1525,12 +1533,12 @@
                 // Ouvrir les details pour montrer le résultat
                 details.open = true;
 
-                btn.textContent = '✅ Optimisé !';
-                btn.style.background = '#27ae60';
+                btn.textContent = isGoogleOptimized ? '✅ Optimisé !' : '⚠️ Optimisé';
+                btn.style.background = isGoogleOptimized ? '#27ae60' : '#f39c12';
 
             } catch (err) {
                 alert('Erreur: ' + err.message);
-                btn.textContent = '🤖 Optimiser avec IA';
+                btn.textContent = '🗺️ Optimiser (Google Maps)';
                 btn.disabled = false;
             } finally {
                 loading.style.display = 'none';

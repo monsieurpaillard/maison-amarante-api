@@ -26,6 +26,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
 IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
 PENNYLANE_API_KEY = os.environ.get("PENNYLANE_API_KEY")
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 # Maison Amarante DB (opérationnel)
 AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
@@ -1427,82 +1428,102 @@ def get_approx_coords_from_postal(code_postal: str) -> tuple:
     return (48.8566, 2.3522)
 
 
-def optimize_route_with_claude(stops: list) -> list:
-    """Utilise Claude pour optimiser l'ordre des stops d'une tournée.
+def optimize_route_with_google_maps(stops: list, origin: str = "Place de la Concorde, Paris") -> dict:
+    """Utilise l'API Google Maps Directions pour optimiser l'ordre des stops.
 
     Args:
         stops: liste de dicts avec {nom, adresse, adresse_label, code_postal, zone, ...}
+        origin: adresse de départ (par défaut Place de la Concorde)
 
     Returns:
-        La même liste réordonnée de façon optimale
+        dict avec:
+            - stops: liste réordonnée de façon optimale
+            - duration: durée totale estimée
+            - distance: distance totale
     """
-    if not stops or len(stops) <= 2:
-        return stops
+    import urllib.parse
 
-    # Construire la liste des adresses pour Claude
-    addresses_text = "\n".join([
-        f"{i+1}. {s.get('nom', 'Client')} - {s.get('adresse', '').replace(chr(10), ' ')}"
-        for i, s in enumerate(stops)
-    ])
+    if not stops or len(stops) <= 1:
+        return {"stops": stops, "duration": 0, "distance": 0, "optimized": False}
 
-    prompt = f"""Tu es un expert en logistique de livraison à Paris et Île-de-France.
+    if not GOOGLE_MAPS_API_KEY:
+        print("[OPTIMIZE] No Google Maps API key, using fallback")
+        return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": "Clé API Google Maps non configurée"}
 
-Voici une liste de {len(stops)} adresses de livraison à optimiser pour minimiser le temps de trajet total.
-Le point de départ est le centre de Paris (Place de la Concorde).
+    # Construire les waypoints (toutes les adresses sauf la dernière qui sera la destination)
+    addresses = [s.get("adresse", "").replace("\n", " ").strip() for s in stops]
 
-ADRESSES À LIVRER:
-{addresses_text}
+    # Utiliser la première adresse comme destination aussi (boucle)
+    # ou la dernière si on veut un trajet linéaire
+    waypoints = addresses[:-1] if len(addresses) > 1 else []
+    destination = addresses[-1] if addresses else origin
 
-RÈGLES D'OPTIMISATION:
-- Regrouper les adresses proches géographiquement
-- Éviter les allers-retours inutiles
-- Tenir compte de la circulation parisienne (privilégier un parcours fluide)
-- Terminer par les adresses en banlieue (92, 93, 94)
-- Pour Paris, suivre une logique géographique (ex: ouest vers est, ou spirale depuis le centre)
+    # Construire l'URL de l'API Directions
+    # optimize:true demande à Google d'optimiser l'ordre des waypoints
+    waypoints_str = "|".join([f"optimize:true"] + [urllib.parse.quote(w) for w in addresses])
 
-RÉPONDS UNIQUEMENT avec la liste des numéros dans l'ordre optimal, séparés par des virgules.
-Exemple de réponse: 3, 1, 5, 2, 4
-
-ORDRE OPTIMAL:"""
+    url = "https://maps.googleapis.com/maps/api/directions/json"
+    params = {
+        "origin": origin,
+        "destination": origin,  # Retour au point de départ (boucle)
+        "waypoints": f"optimize:true|{'|'.join(addresses)}",
+        "mode": "driving",
+        "language": "fr",
+        "key": GOOGLE_MAPS_API_KEY
+    }
 
     try:
-        response = req.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 200,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=30
-        )
+        response = req.get(url, params=params, timeout=30)
+        data = response.json()
 
-        if response.status_code == 200:
-            result = response.json()
-            text = result.get("content", [{}])[0].get("text", "").strip()
-            print(f"[OPTIMIZE] Claude response: {text}")
+        if data.get("status") != "OK":
+            error_msg = data.get("error_message", data.get("status", "Erreur inconnue"))
+            print(f"[OPTIMIZE] Google Maps API error: {error_msg}")
+            return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": error_msg}
 
-            # Parser la réponse (ex: "3, 1, 5, 2, 4")
-            import re
-            numbers = re.findall(r'\d+', text)
-            order = [int(n) - 1 for n in numbers]  # Convertir en indices 0-based
+        # Récupérer l'ordre optimisé des waypoints
+        routes = data.get("routes", [])
+        if not routes:
+            return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": "Aucune route trouvée"}
 
-            # Vérifier que tous les indices sont valides
-            if len(order) == len(stops) and all(0 <= i < len(stops) for i in order):
-                return [stops[i] for i in order]
-            else:
-                print(f"[OPTIMIZE] Invalid order from Claude, using fallback")
+        route = routes[0]
+        waypoint_order = route.get("waypoint_order", [])
+
+        print(f"[OPTIMIZE] Google Maps waypoint_order: {waypoint_order}")
+
+        # Réordonner les stops selon l'ordre optimisé
+        if waypoint_order and len(waypoint_order) == len(stops):
+            optimized_stops = [stops[i] for i in waypoint_order]
         else:
-            print(f"[OPTIMIZE] Claude API error: {response.text}")
+            optimized_stops = stops
+
+        # Calculer la durée et distance totales
+        legs = route.get("legs", [])
+        total_duration = sum(leg.get("duration", {}).get("value", 0) for leg in legs)  # en secondes
+        total_distance = sum(leg.get("distance", {}).get("value", 0) for leg in legs)  # en mètres
+
+        # Ajouter le temps de trajet entre chaque stop
+        for i, stop in enumerate(optimized_stops):
+            if i < len(legs):
+                leg = legs[i]
+                stop["temps_trajet"] = leg.get("duration", {}).get("text", "")
+                stop["distance_trajet"] = leg.get("distance", {}).get("text", "")
+
+        return {
+            "stops": optimized_stops,
+            "duration": total_duration,
+            "duration_text": f"{total_duration // 3600}h{(total_duration % 3600) // 60:02d}" if total_duration >= 3600 else f"{total_duration // 60}min",
+            "distance": total_distance,
+            "distance_text": f"{total_distance / 1000:.1f} km",
+            "optimized": True
+        }
 
     except Exception as e:
-        print(f"[OPTIMIZE] Error: {e}")
+        print(f"[OPTIMIZE] Error calling Google Maps: {e}")
+        return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": str(e)}
 
-    # Fallback: utiliser l'algorithme nearest neighbor
+
+# Garder l'ancienne fonction comme fallback
     return optimize_route_order(stops)
 
 
@@ -3616,39 +3637,51 @@ def api_tournees():
 
 @app.route("/api/tournees/optimize", methods=["POST"])
 def api_tournees_optimize():
-    """Optimise l'ordre des stops d'une tournée avec Claude IA.
+    """Optimise l'ordre des stops d'une tournée avec Google Maps Directions API.
 
     Body JSON:
         stops: liste des stops à optimiser [{nom, adresse, ...}, ...]
+        origin: adresse de départ (optionnel, défaut: Place de la Concorde)
 
     Returns:
-        La liste des stops réordonnée de façon optimale
+        La liste des stops réordonnée de façon optimale par Google Maps
     """
     try:
         data = request.json or {}
         stops = data.get("stops", [])
+        origin = data.get("origin", "Place de la Concorde, Paris")
 
         if not stops:
             return jsonify({"error": "Aucun stop à optimiser"}), 400
 
-        print(f"[OPTIMIZE] Optimizing {len(stops)} stops with Claude...")
-        optimized = optimize_route_with_claude(stops)
+        print(f"[OPTIMIZE] Optimizing {len(stops)} stops with Google Maps...")
+        result = optimize_route_with_google_maps(stops, origin)
 
-        # Recalculer les infos de la tournée
-        temps_estime_min = len(optimized) * 20
+        optimized = result.get("stops", stops)
         zones_couvertes = list(set(c.get("zone", "Autre") for c in optimized))
 
-        return jsonify({
+        response_data = {
             "success": True,
-            "message": f"Tournée optimisée par IA ({len(optimized)} stops)",
+            "optimized_by_google": result.get("optimized", False),
+            "message": f"Tournée optimisée par Google Maps ({len(optimized)} stops)" if result.get("optimized") else f"Optimisation fallback ({len(optimized)} stops)",
             "stops": optimized,
             "nb_stops": len(optimized),
             "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized),
             "zones": zones_couvertes,
-            "duree_estimee": f"{temps_estime_min}min",
-            "temps_estime_min": temps_estime_min,
             "google_maps_url": generate_google_maps_url(optimized)
-        })
+        }
+
+        # Ajouter les infos de durée/distance si disponibles
+        if result.get("duration"):
+            response_data["duree_totale"] = result.get("duration_text", "")
+            response_data["duree_secondes"] = result.get("duration")
+        if result.get("distance"):
+            response_data["distance_totale"] = result.get("distance_text", "")
+            response_data["distance_metres"] = result.get("distance")
+        if result.get("error"):
+            response_data["warning"] = result.get("error")
+
+        return jsonify(response_data)
 
     except Exception as e:
         import traceback
