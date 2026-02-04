@@ -1433,7 +1433,9 @@ def prepare_tournees():
     cards = get_suivi_cards()
     clients_by_name, clients_by_pennylane, _ = get_existing_clients()
 
-    active_statuts = ["Factures", "Abonnements", "Essai gratuit", "À livrer"]
+    # Seulement les statuts qui indiquent une livraison ponctuelle à faire
+    # "Factures" et "Abonnements" sont des clients récurrents (gérés par fréquence)
+    delivery_statuts = ["À livrer", "Essai gratuit"]
 
     # Collecter tous les clients à livrer
     clients_to_deliver = []
@@ -1446,7 +1448,7 @@ def prepare_tournees():
         pennylane_id = str(card_fields.get("ID Pennylane", ""))
         suivi_adresse = card_fields.get("Adresse", "")  # Adresse depuis Suivi Facturation
 
-        if not client_name or statut not in active_statuts:
+        if not client_name or statut not in delivery_statuts:
             continue
 
         # Éviter les doublons
