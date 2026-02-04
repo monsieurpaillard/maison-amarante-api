@@ -409,6 +409,170 @@
         .budget-fill.green { background: #27ae60; }
         .budget-fill.orange { background: #f39c12; }
         .budget-fill.red { background: #e74c3c; }
+
+        /* Modal Adresses */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .modal-header h3 { margin: 0; font-size: 16px; }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #636e72;
+        }
+
+        .adresse-item {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .adresse-item.principale {
+            border: 2px solid #27ae60;
+            background: #e8f8f5;
+        }
+        .adresse-label {
+            font-weight: 600;
+            font-size: 13px;
+            color: #2d3436;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .adresse-principale-badge {
+            background: #27ae60;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+        .adresse-text {
+            font-size: 12px;
+            color: #636e72;
+            margin-top: 5px;
+        }
+        .adresse-notes {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+            font-style: italic;
+        }
+        .adresse-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .adresse-btn {
+            padding: 5px 10px;
+            font-size: 11px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .adresse-btn.principale { background: #27ae60; color: white; }
+        .adresse-btn.edit { background: #3498db; color: white; }
+        .adresse-btn.delete { background: #e74c3c; color: white; }
+
+        /* Formulaire nouvelle adresse */
+        .adresse-form { margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
+        .adresse-form h4 { margin: 0 0 10px 0; font-size: 14px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 12px; color: #636e72; margin-bottom: 4px; }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        .form-group textarea { resize: vertical; min-height: 60px; }
+        .form-group.checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-group.checkbox input { width: auto; }
+        .form-group.checkbox label { margin: 0; }
+
+        /* Autocomplete */
+        .autocomplete-container { position: relative; }
+        .autocomplete-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            display: none;
+        }
+        .autocomplete-results.show { display: block; }
+        .autocomplete-item {
+            padding: 10px;
+            font-size: 13px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .autocomplete-item:hover { background: #f8f9fa; }
+        .autocomplete-item:last-child { border-bottom: none; }
+
+        /* Bouton gestion adresses dans l'inbox */
+        .inbox-adresses-btn {
+            background: #f0f0f0;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        .inbox-adresses-btn:hover { background: #e0e0e0; }
+        .inbox-nb-adresses {
+            background: #3498db;
+            color: white;
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 8px;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
@@ -659,7 +823,48 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Modal Gestion Adresses -->
+    <div class="modal-overlay" id="adressesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="adressesModalTitle">Adresses du client</h3>
+                <button class="modal-close" onclick="closeAdressesModal()">&times;</button>
+            </div>
+
+            <div id="adressesModalLoading" style="text-align: center; padding: 20px; display: none;">
+                <div class="spinner"></div>
+                <div>Chargement...</div>
+            </div>
+
+            <div id="adressesList"></div>
+
+            <div class="adresse-form">
+                <h4>Ajouter une adresse</h4>
+                <div class="form-group">
+                    <label>Label (ex: Siège, Boutique Marais...)</label>
+                    <input type="text" id="newAdresseLabel" placeholder="Nom de l'adresse">
+                </div>
+                <div class="form-group">
+                    <label>Adresse</label>
+                    <div class="autocomplete-container">
+                        <input type="text" id="newAdresseText" placeholder="Commencez à taper l'adresse..." oninput="searchAdresse(this.value)">
+                        <div class="autocomplete-results" id="adresseAutocomplete"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Notes / Instructions (code, contact...)</label>
+                    <textarea id="newAdresseNotes" placeholder="Optionnel"></textarea>
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="newAdressePrincipale">
+                    <label for="newAdressePrincipale">Définir comme adresse principale</label>
+                </div>
+                <button class="btn btn-success" onclick="addNewAdresse()" style="margin-top: 10px;">Ajouter l'adresse</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Budget Banner
         function formatMoney(n) {
@@ -1029,6 +1234,7 @@
                     const statutClass = client.statut === 'Essai gratuit' ? 'essai' : '';
                     const attenteClass = client.alerte ? 'urgent' : '';
 
+                    const nbAdresses = (client.toutes_adresses || []).length;
                     html += `
                         <div class="inbox-client ${alerteClass}" data-card-id="${client.card_id}" data-client-id="${client.client_id || ''}">
                             <div class="inbox-client-header">
@@ -1038,6 +1244,9 @@
                             <div class="inbox-client-info">
                                 <span>📍 ${client.adresse || 'Adresse non renseignée'}</span>
                                 <span>🗺️ ${client.zone} • 💐 ${client.nb_bouquets} bouquet(s)</span>
+                                ${client.client_id ? `<button class="inbox-adresses-btn" onclick="openAdressesModal('${client.client_id}', '${client.nom.replace(/'/g, "\\'")}')">
+                                    Gérer les adresses${nbAdresses > 0 ? `<span class="inbox-nb-adresses">${nbAdresses}</span>` : ''}
+                                </button>` : ''}
                             </div>
                             <div class="inbox-attente ${attenteClass}">
                                 ${client.alerte ? '⚠️' : '⏱️'} ${client.jours_attente} jour(s) d'attente
@@ -1538,6 +1747,253 @@
                 cleanupBouquetsBtn.disabled = false;
             }
         });
+
+        // ==================== GESTION ADRESSES ====================
+
+        let currentAdressesClientId = null;
+        let currentAdressesClientName = '';
+        let searchDebounce = null;
+
+        function openAdressesModal(clientId, clientName) {
+            currentAdressesClientId = clientId;
+            currentAdressesClientName = clientName;
+
+            document.getElementById('adressesModalTitle').textContent = `Adresses - ${clientName}`;
+            document.getElementById('adressesModal').classList.add('show');
+            document.getElementById('adressesModalLoading').style.display = 'block';
+            document.getElementById('adressesList').innerHTML = '';
+
+            // Réinitialiser le formulaire
+            document.getElementById('newAdresseLabel').value = '';
+            document.getElementById('newAdresseText').value = '';
+            document.getElementById('newAdresseNotes').value = '';
+            document.getElementById('newAdressePrincipale').checked = false;
+            document.getElementById('adresseAutocomplete').classList.remove('show');
+
+            loadAddresses(clientId);
+        }
+
+        function closeAdressesModal() {
+            document.getElementById('adressesModal').classList.remove('show');
+            currentAdressesClientId = null;
+            currentAdressesClientName = '';
+        }
+
+        async function loadAddresses(clientId) {
+            try {
+                const response = await fetch(`/api/client/${clientId}/adresses`);
+                const data = await response.json();
+
+                document.getElementById('adressesModalLoading').style.display = 'none';
+
+                if (data.error) {
+                    document.getElementById('adressesList').innerHTML = `<p style="color: #e74c3c;">Erreur: ${data.error}</p>`;
+                    return;
+                }
+
+                renderAddresses(data.adresses || []);
+            } catch (err) {
+                document.getElementById('adressesModalLoading').style.display = 'none';
+                document.getElementById('adressesList').innerHTML = `<p style="color: #e74c3c;">Erreur: ${err.message}</p>`;
+            }
+        }
+
+        function renderAddresses(addresses) {
+            if (addresses.length === 0) {
+                document.getElementById('adressesList').innerHTML = '<p style="color: #666; text-align: center; padding: 15px;">Aucune adresse enregistrée</p>';
+                return;
+            }
+
+            let html = '';
+            for (const addr of addresses) {
+                const principaleClass = addr.principale ? 'principale' : '';
+                html += `
+                    <div class="adresse-item ${principaleClass}" data-address-id="${addr.id}">
+                        <div class="adresse-label">
+                            ${addr.label || 'Sans label'}
+                            ${addr.principale ? '<span class="adresse-principale-badge">Principale</span>' : ''}
+                        </div>
+                        <div class="adresse-text">${addr.adresse || ''}</div>
+                        ${addr.notes ? `<div class="adresse-notes">${addr.notes}</div>` : ''}
+                        <div class="adresse-actions">
+                            ${!addr.principale ? `<button class="adresse-btn principale" onclick="setPrincipale('${addr.id}')">Principale</button>` : ''}
+                            <button class="adresse-btn edit" onclick="editAdresse('${addr.id}', '${(addr.label || '').replace(/'/g, "\\'")}', '${(addr.adresse || '').replace(/'/g, "\\'")}', '${(addr.notes || '').replace(/'/g, "\\'")}')">Modifier</button>
+                            <button class="adresse-btn delete" onclick="deleteAdresse('${addr.id}', '${(addr.label || '').replace(/'/g, "\\'")}')">Supprimer</button>
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('adressesList').innerHTML = html;
+        }
+
+        async function addNewAdresse() {
+            const label = document.getElementById('newAdresseLabel').value.trim();
+            const adresse = document.getElementById('newAdresseText').value.trim();
+            const notes = document.getElementById('newAdresseNotes').value.trim();
+            const principale = document.getElementById('newAdressePrincipale').checked;
+
+            if (!label) {
+                alert('Veuillez entrer un label pour l\'adresse');
+                return;
+            }
+            if (!adresse) {
+                alert('Veuillez entrer une adresse');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/client/${currentAdressesClientId}/adresses`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label, adresse, notes, principale })
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Erreur: ' + data.error);
+                    return;
+                }
+
+                // Réinitialiser le formulaire
+                document.getElementById('newAdresseLabel').value = '';
+                document.getElementById('newAdresseText').value = '';
+                document.getElementById('newAdresseNotes').value = '';
+                document.getElementById('newAdressePrincipale').checked = false;
+
+                // Recharger la liste
+                loadAddresses(currentAdressesClientId);
+            } catch (err) {
+                alert('Erreur: ' + err.message);
+            }
+        }
+
+        async function setPrincipale(addressId) {
+            try {
+                const response = await fetch(`/api/adresse/${addressId}/principale`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_id: currentAdressesClientId })
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Erreur: ' + data.error);
+                    return;
+                }
+
+                loadAddresses(currentAdressesClientId);
+            } catch (err) {
+                alert('Erreur: ' + err.message);
+            }
+        }
+
+        async function editAdresse(addressId, currentLabel, currentAdresse, currentNotes) {
+            const newLabel = prompt('Label:', currentLabel);
+            if (newLabel === null) return;
+
+            const newAdresse = prompt('Adresse:', currentAdresse);
+            if (newAdresse === null) return;
+
+            const newNotes = prompt('Notes:', currentNotes);
+            if (newNotes === null) return;
+
+            try {
+                const response = await fetch(`/api/adresse/${addressId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        label: newLabel,
+                        adresse: newAdresse,
+                        notes: newNotes
+                    })
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Erreur: ' + data.error);
+                    return;
+                }
+
+                loadAddresses(currentAdressesClientId);
+            } catch (err) {
+                alert('Erreur: ' + err.message);
+            }
+        }
+
+        async function deleteAdresse(addressId, label) {
+            if (!confirm(`Supprimer l'adresse "${label}" ?`)) return;
+
+            try {
+                const response = await fetch(`/api/adresse/${addressId}`, { method: 'DELETE' });
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Erreur: ' + data.error);
+                    return;
+                }
+
+                loadAddresses(currentAdressesClientId);
+            } catch (err) {
+                alert('Erreur: ' + err.message);
+            }
+        }
+
+        // Autocomplete adresse avec api-adresse.data.gouv.fr
+        async function searchAdresse(query) {
+            const autocomplete = document.getElementById('adresseAutocomplete');
+
+            if (query.length < 3) {
+                autocomplete.classList.remove('show');
+                return;
+            }
+
+            // Debounce
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(async () => {
+                try {
+                    const response = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`);
+                    const data = await response.json();
+
+                    if (!data.features || data.features.length === 0) {
+                        autocomplete.classList.remove('show');
+                        return;
+                    }
+
+                    let html = '';
+                    for (const feature of data.features) {
+                        const adresse = feature.properties.label;
+                        html += `<div class="autocomplete-item" onclick="selectAdresse('${adresse.replace(/'/g, "\\'")}')">${adresse}</div>`;
+                    }
+
+                    autocomplete.innerHTML = html;
+                    autocomplete.classList.add('show');
+                } catch (err) {
+                    console.error('Autocomplete error:', err);
+                    autocomplete.classList.remove('show');
+                }
+            }, 300);
+        }
+
+        function selectAdresse(adresse) {
+            document.getElementById('newAdresseText').value = adresse;
+            document.getElementById('adresseAutocomplete').classList.remove('show');
+        }
+
+        // Fermer l'autocomplete en cliquant ailleurs
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.autocomplete-container')) {
+                document.getElementById('adresseAutocomplete')?.classList.remove('show');
+            }
+        });
+
+        // Fermer le modal en cliquant sur l'overlay
+        document.getElementById('adressesModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeAdressesModal();
+            }
+        });
+
+        // ==================== FIN GESTION ADRESSES ====================
 
         // Service Worker
         if ('serviceWorker' in navigator) {

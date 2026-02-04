@@ -30,6 +30,7 @@ AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
 AIRTABLE_BOUQUETS_TABLE = os.environ.get("AIRTABLE_BOUQUETS_TABLE", "tblIO7x8iR01vO5Bx")
 AIRTABLE_CLIENTS_TABLE = os.environ.get("AIRTABLE_CLIENTS_TABLE", "tblOJnWeVjfkA7Cfs")
 AIRTABLE_LIVRAISONS_TABLE = os.environ.get("AIRTABLE_LIVRAISONS_TABLE", "tbltyDn0VUIbasYtx")
+AIRTABLE_ADRESSES_TABLE = os.environ.get("AIRTABLE_ADRESSES_TABLE", "tblaFRfSVdkw7nT2L")
 
 # Suivi Facturation (pipe commercial)
 SUIVI_BASE_ID = "appxlOtjRVYqbW85l"
@@ -551,13 +552,237 @@ def update_livraison(record_id: str, fields: dict) -> dict:
     """Met à jour une livraison"""
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_LIVRAISONS_TABLE}/{record_id}"
     headers = get_airtable_headers()
-    
+
     response = req.patch(url, headers=headers, json={"fields": fields})
     if response.status_code == 200:
         return {"success": True, "record": response.json()}
     else:
         print(f"[LIVRAISONS] Update error: {response.text}")
         return {"success": False, "error": response.text}
+
+
+# ==================== ADRESSES HELPERS ====================
+
+def get_client_addresses(client_id: str) -> list:
+    """Récupère toutes les adresses d'un client depuis la table Adresses.
+
+    Args:
+        client_id: L'ID du record Airtable du client
+
+    Returns:
+        Liste des adresses avec leurs infos
+    """
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_ADRESSES_TABLE}"
+    headers = get_airtable_headers()
+
+    # Filtrer par le lien Client
+    params = {
+        "filterByFormula": f"FIND('{client_id}', ARRAYJOIN({{Client}}, ','))"
+    }
+
+    all_records = []
+    offset = None
+
+    while True:
+        if offset:
+            params["offset"] = offset
+
+        response = req.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            print(f"[ADRESSES] Error fetching: {response.text}")
+            break
+
+        data = response.json()
+        all_records.extend(data.get("records", []))
+
+        offset = data.get("offset")
+        if not offset:
+            break
+
+    # Formater les résultats
+    addresses = []
+    for record in all_records:
+        fields = record.get("fields", {})
+        addresses.append({
+            "id": record["id"],
+            "label": fields.get("Label", ""),
+            "adresse": fields.get("Adresse", ""),
+            "principale": fields.get("Principale", False),
+            "notes": fields.get("Notes", ""),
+            "client_id": client_id
+        })
+
+    # Trier pour mettre l'adresse principale en premier
+    addresses.sort(key=lambda a: (not a["principale"], a["label"]))
+
+    return addresses
+
+
+def get_principale_address(client_id: str) -> dict:
+    """Récupère l'adresse principale d'un client.
+
+    Args:
+        client_id: L'ID du record Airtable du client
+
+    Returns:
+        L'adresse principale ou None si aucune
+    """
+    addresses = get_client_addresses(client_id)
+
+    # Chercher l'adresse principale
+    for addr in addresses:
+        if addr.get("principale"):
+            return addr
+
+    # Si aucune principale, retourner la première
+    return addresses[0] if addresses else None
+
+
+def create_address(client_id: str, label: str, adresse: str, principale: bool = False, notes: str = "") -> dict:
+    """Crée une nouvelle adresse pour un client.
+
+    Args:
+        client_id: L'ID du record Airtable du client
+        label: Le label de l'adresse (ex: "Siège", "Boutique Marais")
+        adresse: L'adresse complète
+        principale: Si True, cette adresse devient la principale
+        notes: Instructions ou notes (code, contact...)
+
+    Returns:
+        Le résultat de la création
+    """
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_ADRESSES_TABLE}"
+    headers = get_airtable_headers()
+
+    # Si on définit cette adresse comme principale, désactiver les autres
+    if principale:
+        existing = get_client_addresses(client_id)
+        for addr in existing:
+            if addr.get("principale"):
+                update_address(addr["id"], {"Principale": False})
+
+    fields = {
+        "Client": [client_id],
+        "Label": label,
+        "Adresse": adresse,
+        "Principale": principale
+    }
+
+    if notes:
+        fields["Notes"] = notes
+
+    response = req.post(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        record = response.json()
+        print(f"[ADRESSES] Created address for client {client_id}: {label}")
+        return {"success": True, "record": record, "id": record.get("id")}
+    else:
+        print(f"[ADRESSES] Create error: {response.text}")
+        return {"success": False, "error": response.text}
+
+
+def update_address(address_id: str, fields: dict) -> dict:
+    """Met à jour une adresse existante.
+
+    Args:
+        address_id: L'ID du record Airtable de l'adresse
+        fields: Les champs à mettre à jour
+
+    Returns:
+        Le résultat de la mise à jour
+    """
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_ADRESSES_TABLE}/{address_id}"
+    headers = get_airtable_headers()
+
+    response = req.patch(url, headers=headers, json={"fields": fields})
+    if response.status_code == 200:
+        print(f"[ADRESSES] Updated address {address_id}")
+        return {"success": True, "record": response.json()}
+    else:
+        print(f"[ADRESSES] Update error: {response.text}")
+        return {"success": False, "error": response.text}
+
+
+def delete_address(address_id: str) -> dict:
+    """Supprime une adresse.
+
+    Args:
+        address_id: L'ID du record Airtable de l'adresse
+
+    Returns:
+        Le résultat de la suppression
+    """
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_ADRESSES_TABLE}/{address_id}"
+    headers = get_airtable_headers()
+
+    response = req.delete(url, headers=headers)
+    if response.status_code == 200:
+        print(f"[ADRESSES] Deleted address {address_id}")
+        return {"success": True}
+    else:
+        print(f"[ADRESSES] Delete error: {response.text}")
+        return {"success": False, "error": response.text}
+
+
+def set_principale_address(address_id: str, client_id: str) -> dict:
+    """Définit une adresse comme principale pour un client.
+
+    Args:
+        address_id: L'ID de l'adresse à définir comme principale
+        client_id: L'ID du client (pour désactiver les autres adresses principales)
+
+    Returns:
+        Le résultat de l'opération
+    """
+    # D'abord, désactiver toutes les autres adresses principales du client
+    existing = get_client_addresses(client_id)
+    for addr in existing:
+        if addr.get("principale") and addr["id"] != address_id:
+            update_address(addr["id"], {"Principale": False})
+
+    # Puis activer celle-ci
+    return update_address(address_id, {"Principale": True})
+
+
+def find_or_create_address(client_id: str, adresse: str, label: str = "Principale", principale: bool = True) -> dict:
+    """Trouve une adresse existante ou en crée une nouvelle.
+
+    Utilisé lors de la sync pour éviter les doublons.
+
+    Args:
+        client_id: L'ID du client
+        adresse: L'adresse à trouver ou créer
+        label: Le label si création
+        principale: Si principale pour la création
+
+    Returns:
+        L'adresse existante ou nouvellement créée
+    """
+    if not adresse or not adresse.strip():
+        return None
+
+    # Chercher si l'adresse existe déjà
+    existing = get_client_addresses(client_id)
+    for addr in existing:
+        # Comparaison simple (on pourrait normaliser pour être plus robuste)
+        if addr.get("adresse", "").strip().lower() == adresse.strip().lower():
+            # Si on veut la marquer comme principale et qu'elle ne l'est pas
+            if principale and not addr.get("principale"):
+                set_principale_address(addr["id"], client_id)
+            return addr
+
+    # Si l'adresse n'existe pas, la créer
+    result = create_address(client_id, label, adresse, principale)
+    if result.get("success"):
+        return {
+            "id": result.get("id"),
+            "label": label,
+            "adresse": adresse,
+            "principale": principale,
+            "notes": "",
+            "client_id": client_id
+        }
+    return None
 
 
 # ==================== CLAUDE HELPERS ====================
@@ -835,6 +1060,7 @@ def sync_suivi_to_clients(skip_parsing=False):
         "clients_updated": 0,
         "clients_deactivated": 0,
         "livraisons_created": 0,
+        "adresses_created": 0,
         "notes_parsed": 0,
         "errors": [],
         "details": []
@@ -901,9 +1127,8 @@ def sync_suivi_to_clients(skip_parsing=False):
         if pennylane_id:
             client_fields["ID_Pennylane"] = pennylane_id
 
-        # Copier l'adresse directement (pas de parsing)
-        if adresse:
-            client_fields["Adresse"] = adresse
+        # NOTE: L'adresse n'est plus stockée dans Clients mais dans la table Adresses
+        # Elle sera créée/mise à jour après la création/mise à jour du client
 
         # Ajouter les infos parsées par Claude
         if parsed.get("persona"):
@@ -929,7 +1154,6 @@ def sync_suivi_to_clients(skip_parsing=False):
                 client_fields["Tailles_Demandées"] = tailles
         if parsed.get("creneau_prefere"):
             client_fields["Créneau_Préféré"] = parsed["creneau_prefere"]
-        # Adresse: copiée directement depuis Suivi Facturation (pas de parsing)
         if parsed.get("instructions_speciales"):
             client_fields["Notes_Spéciales"] = parsed["instructions_speciales"]
 
@@ -939,6 +1163,12 @@ def sync_suivi_to_clients(skip_parsing=False):
             if result["success"]:
                 results["clients_updated"] += 1
                 results["details"].append(f"✏️ Client mis à jour: {client_name}")
+
+                # Créer/mettre à jour l'adresse dans la table Adresses
+                if adresse:
+                    addr_result = find_or_create_address(record_id, adresse, "Principale", True)
+                    if addr_result:
+                        results["adresses_created"] += 1
         else:
             if "Fréquence" not in client_fields:
                 client_fields["Fréquence"] = "Mensuel"
@@ -950,10 +1180,17 @@ def sync_suivi_to_clients(skip_parsing=False):
                 results["clients_created"] += 1
                 results["details"].append(f"✅ Client créé: {client_name}")
                 record_id = result["record"]["id"]
+
+                # Créer l'adresse dans la table Adresses
+                if adresse:
+                    addr_result = find_or_create_address(record_id, adresse, "Principale", True)
+                    if addr_result:
+                        results["adresses_created"] += 1
+                        results["details"].append(f"📍 Adresse créée pour: {client_name}")
             else:
                 results["errors"].append(f"Erreur création {client_name}")
                 continue
-            
+
             # Créer une livraison si statut "À livrer" ou "Essai gratuit"
             if statut in ["À livrer", "Essai gratuit"]:
                 livraison_type = "Essai gratuit" if statut == "Essai gratuit" else "One-shot"
@@ -1196,20 +1433,35 @@ def prepare_tournees():
         if not fields.get("Actif", False):
             continue
 
-        adresse = fields.get("Adresse", "")
+        client_id = client["id"]
+
+        # Récupérer l'adresse principale depuis la table Adresses
+        principale_addr = get_principale_address(client_id)
+
+        # Fallback sur le champ Adresse du client si pas d'adresse dans la table Adresses
+        if principale_addr:
+            adresse = principale_addr.get("adresse", "")
+        else:
+            adresse = fields.get("Adresse", "")
+
         if not adresse:
             continue
 
+        # Récupérer toutes les adresses pour l'affichage
+        toutes_adresses = get_client_addresses(client_id)
+
         clients_to_deliver.append({
-            "id": client["id"],
+            "id": client_id,
             "nom": fields.get("Nom", ""),
             "adresse": adresse,
+            "adresse_label": principale_addr.get("label", "Principale") if principale_addr else "Principale",
             "code_postal": extract_postal_code(adresse),
             "zone": get_geographic_zone(extract_postal_code(adresse)),
             "nb_bouquets": fields.get("Nb_Bouquets", 1),
             "creneau": fields.get("Créneau_Préféré", ""),
             "pref_couleurs": fields.get("Pref_Couleurs", ""),
             "pref_style": fields.get("Pref_Style", ""),
+            "toutes_adresses": toutes_adresses,
         })
 
     if not clients_to_deliver:
@@ -1232,8 +1484,15 @@ def prepare_tournees():
         # Optimiser l'ordre dans chaque tournée
         optimized = optimize_route_order(clients)
 
+        # Ajouter temps_ajoute à chaque client (20 min par défaut)
+        for c in optimized:
+            c["temps_ajoute"] = 20  # ~20 min par client
+
         # Zones couvertes
         zones_couvertes = list(set(c.get("zone", "Autre") for c in optimized))
+
+        # Calculer le temps estimé (20 min par client)
+        temps_estime_min = len(optimized) * 20
 
         tournees.append({
             "numero": i + 1,
@@ -1243,7 +1502,9 @@ def prepare_tournees():
             "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized),
             "zones": zones_couvertes,
             "google_maps_url": generate_google_maps_url(optimized),
-            "duree_estimee": f"{len(optimized) * 20}min"  # ~20min par client (trajet + livraison)
+            "duree_estimee": f"{temps_estime_min}min",
+            "temps_estime_min": temps_estime_min,
+            "temps_max": 360  # 6 heures max par tournée
         })
 
     return {
@@ -2727,20 +2988,30 @@ def api_inbox():
             notes = fields.get("Notes", "")
             montant = fields.get("Montant", 0)
 
-            # Adresse en priorité depuis Suivi Facturation, sinon depuis table Clients
+            # Adresse en priorité depuis Suivi Facturation, sinon depuis table Adresses, sinon Clients
             adresse = fields.get("Adresse", "")
             zone = "Autre"
             nb_bouquets = 1
             code_postal = ""
+            toutes_adresses = []
 
             # Récupérer les infos complémentaires depuis la table Clients
             client_record = clients_by_name.get(client_name.upper())
             if client_record:
+                client_id = client_record["id"]
                 client_fields = client_record.get("fields", {})
-                # Si pas d'adresse dans Suivi Facturation, prendre celle de Clients
+                nb_bouquets = client_fields.get("Nb_Bouquets", 1)
+
+                # Récupérer les adresses depuis la table Adresses
+                toutes_adresses = get_client_addresses(client_id)
+                principale_addr = next((a for a in toutes_adresses if a.get("principale")), None)
+
+                # Si pas d'adresse dans Suivi, utiliser l'adresse principale de la table Adresses
+                if not adresse and principale_addr:
+                    adresse = principale_addr.get("adresse", "")
+                # Sinon, fallback sur le champ Adresse du client (pour la rétrocompatibilité)
                 if not adresse:
                     adresse = client_fields.get("Adresse", "")
-                nb_bouquets = client_fields.get("Nb_Bouquets", 1)
 
             # Calculer zone depuis l'adresse
             if adresse:
@@ -2769,7 +3040,8 @@ def api_inbox():
                 "notes": notes,
                 "jours_attente": jours_attente,
                 "alerte": jours_attente > 4,
-                "date_creation": date_creation
+                "date_creation": date_creation,
+                "toutes_adresses": toutes_adresses
             }
 
             inbox_clients.append(client_info)
@@ -2903,6 +3175,131 @@ def api_inbox_placer():
     except Exception as e:
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+# ==================== ADRESSES API ====================
+
+@app.route("/api/client/<client_id>/adresses", methods=["GET"])
+def api_client_adresses_list(client_id):
+    """Liste toutes les adresses d'un client"""
+    try:
+        addresses = get_client_addresses(client_id)
+        return jsonify({
+            "success": True,
+            "client_id": client_id,
+            "count": len(addresses),
+            "adresses": addresses
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/client/<client_id>/adresses", methods=["POST"])
+def api_client_adresses_create(client_id):
+    """Ajoute une nouvelle adresse pour un client"""
+    data = request.json or {}
+
+    label = data.get("label", "").strip()
+    adresse = data.get("adresse", "").strip()
+    principale = data.get("principale", False)
+    notes = data.get("notes", "").strip()
+
+    if not label:
+        return jsonify({"error": "Label requis"}), 400
+    if not adresse:
+        return jsonify({"error": "Adresse requise"}), 400
+
+    try:
+        result = create_address(client_id, label, adresse, principale, notes)
+        if result.get("success"):
+            return jsonify({
+                "success": True,
+                "message": f"Adresse '{label}' créée",
+                "adresse": {
+                    "id": result.get("id"),
+                    "label": label,
+                    "adresse": adresse,
+                    "principale": principale,
+                    "notes": notes,
+                    "client_id": client_id
+                }
+            })
+        else:
+            return jsonify({"error": result.get("error", "Erreur de création")}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adresse/<address_id>", methods=["PUT"])
+def api_adresse_update(address_id):
+    """Modifie une adresse existante"""
+    data = request.json or {}
+
+    # Construire les champs à mettre à jour
+    fields = {}
+    if "label" in data:
+        fields["Label"] = data["label"].strip()
+    if "adresse" in data:
+        fields["Adresse"] = data["adresse"].strip()
+    if "notes" in data:
+        fields["Notes"] = data["notes"].strip()
+    # Note: 'principale' est géré via l'endpoint dédié /principale
+
+    if not fields:
+        return jsonify({"error": "Aucun champ à mettre à jour"}), 400
+
+    try:
+        result = update_address(address_id, fields)
+        if result.get("success"):
+            return jsonify({
+                "success": True,
+                "message": "Adresse mise à jour"
+            })
+        else:
+            return jsonify({"error": result.get("error", "Erreur de mise à jour")}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adresse/<address_id>", methods=["DELETE"])
+def api_adresse_delete(address_id):
+    """Supprime une adresse"""
+    try:
+        result = delete_address(address_id)
+        if result.get("success"):
+            return jsonify({
+                "success": True,
+                "message": "Adresse supprimée"
+            })
+        else:
+            return jsonify({"error": result.get("error", "Erreur de suppression")}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adresse/<address_id>/principale", methods=["POST"])
+def api_adresse_set_principale(address_id):
+    """Définit une adresse comme principale"""
+    data = request.json or {}
+    client_id = data.get("client_id")
+
+    if not client_id:
+        return jsonify({"error": "client_id requis"}), 400
+
+    try:
+        result = set_principale_address(address_id, client_id)
+        if result.get("success"):
+            return jsonify({
+                "success": True,
+                "message": "Adresse définie comme principale"
+            })
+        else:
+            return jsonify({"error": result.get("error", "Erreur")}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== FIN ADRESSES API ====================
 
 
 # TEMPORAIREMENT DÉSACTIVÉ - Tournées et dispatch (on y reviendra plus tard)
