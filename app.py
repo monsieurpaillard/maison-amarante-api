@@ -1463,42 +1463,62 @@ def prepare_tournees():
             client_id = existing_client["id"]
             client_fields = existing_client.get("fields", {})
 
-            # Récupérer l'adresse principale depuis la table Adresses
-            principale_addr = get_principale_address(client_id)
-
-            # Priorité: Table Adresses > Suivi Facturation > Champ Adresse du client
-            if principale_addr:
-                adresse = principale_addr.get("adresse", "")
-            elif suivi_adresse:
-                adresse = suivi_adresse
-            else:
-                adresse = client_fields.get("Adresse", "")
-
+            # Récupérer TOUTES les adresses de ce client
             toutes_adresses = get_client_addresses(client_id)
+
+            # Si le client a plusieurs adresses, créer un stop par adresse
+            if toutes_adresses:
+                for addr in toutes_adresses:
+                    adresse = addr.get("adresse", "")
+                    if not adresse:
+                        continue
+
+                    clients_to_deliver.append({
+                        "id": client_id,
+                        "nom": client_name,
+                        "adresse": adresse,
+                        "adresse_label": addr.get("label", ""),
+                        "code_postal": extract_postal_code(adresse),
+                        "zone": get_geographic_zone(extract_postal_code(adresse)),
+                        "nb_bouquets": 1,  # 1 bouquet par adresse
+                        "creneau": client_fields.get("Créneau_Préféré", ""),
+                        "pref_couleurs": client_fields.get("Pref_Couleurs", ""),
+                        "pref_style": client_fields.get("Pref_Style", ""),
+                        "toutes_adresses": toutes_adresses,
+                    })
+            else:
+                # Pas d'adresses dans la table, utiliser Suivi Facturation ou champ Client
+                adresse = suivi_adresse or client_fields.get("Adresse", "")
+                if adresse:
+                    clients_to_deliver.append({
+                        "id": client_id,
+                        "nom": client_name,
+                        "adresse": adresse,
+                        "adresse_label": "Principale",
+                        "code_postal": extract_postal_code(adresse),
+                        "zone": get_geographic_zone(extract_postal_code(adresse)),
+                        "nb_bouquets": client_fields.get("Nb_Bouquets", 1),
+                        "creneau": client_fields.get("Créneau_Préféré", ""),
+                        "pref_couleurs": client_fields.get("Pref_Couleurs", ""),
+                        "pref_style": client_fields.get("Pref_Style", ""),
+                        "toutes_adresses": [],
+                    })
         else:
             # Client pas encore dans la table Clients, utiliser l'adresse de Suivi
-            client_id = None
-            client_fields = {}
-            principale_addr = None
-            adresse = suivi_adresse
-            toutes_adresses = []
-
-        if not adresse:
-            continue
-
-        clients_to_deliver.append({
-            "id": client_id,
-            "nom": client_name,
-            "adresse": adresse,
-            "adresse_label": principale_addr.get("label", "Principale") if principale_addr else "Principale",
-            "code_postal": extract_postal_code(adresse),
-            "zone": get_geographic_zone(extract_postal_code(adresse)),
-            "nb_bouquets": client_fields.get("Nb_Bouquets", 1) if client_fields else 1,
-            "creneau": client_fields.get("Créneau_Préféré", "") if client_fields else "",
-            "pref_couleurs": client_fields.get("Pref_Couleurs", "") if client_fields else "",
-            "pref_style": client_fields.get("Pref_Style", "") if client_fields else "",
-            "toutes_adresses": toutes_adresses,
-        })
+            if suivi_adresse:
+                clients_to_deliver.append({
+                    "id": None,
+                    "nom": client_name,
+                    "adresse": suivi_adresse,
+                    "adresse_label": "Principale",
+                    "code_postal": extract_postal_code(suivi_adresse),
+                    "zone": get_geographic_zone(extract_postal_code(suivi_adresse)),
+                    "nb_bouquets": 1,
+                    "creneau": "",
+                    "pref_couleurs": "",
+                    "pref_style": "",
+                    "toutes_adresses": [],
+                })
 
     if not clients_to_deliver:
         return {
@@ -1543,12 +1563,16 @@ def prepare_tournees():
             "temps_max": 360  # 6 heures max par tournée
         })
 
+    # Compter les clients uniques (pas les stops)
+    unique_clients = len(set(c.get("nom", "") for c in clients_to_deliver))
+
     return {
-        "total_clients": len(clients_to_deliver),
+        "total_clients": unique_clients,
+        "total_stops": len(clients_to_deliver),
         "total_bouquets": sum(c.get("nb_bouquets", 1) for c in clients_to_deliver),
         "nb_tournees": len(tournees),
         "tournees": tournees,
-        "message": f"{len(tournees)} tournées générées pour {len(clients_to_deliver)} clients"
+        "message": f"{len(tournees)} tournées générées pour {unique_clients} clients ({len(clients_to_deliver)} livraisons)"
     }
 
 
