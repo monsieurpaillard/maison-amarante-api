@@ -1424,45 +1424,77 @@ def split_into_tournees(clients: list, max_clients_per_tournee: int = 12) -> lis
 
 
 def prepare_tournees():
-    """Prépare PLUSIEURS tournées optimisées, réparties sur différents jours."""
-    _, _, all_clients = get_existing_clients()
+    """Prépare PLUSIEURS tournées optimisées, réparties sur différents jours.
 
-    # Récupérer tous les clients actifs avec une adresse
+    Utilise les cartes de Suivi Facturation avec statuts actifs comme source,
+    plutôt que le champ Actif de la table Clients (qui peut être désynchronisé).
+    """
+    # Récupérer les cartes de Suivi Facturation
+    cards = get_suivi_cards()
+    clients_by_name, clients_by_pennylane, _ = get_existing_clients()
+
+    active_statuts = ["Factures", "Abonnements", "Essai gratuit", "À livrer"]
+
+    # Collecter tous les clients à livrer
     clients_to_deliver = []
-    for client in all_clients:
-        fields = client.get("fields", {})
+    seen_clients = set()  # Éviter les doublons
 
-        if not fields.get("Actif", False):
+    for card in cards:
+        card_fields = card.get("fields", {})
+        client_name = card_fields.get("Nom du Client", "").strip()
+        statut = card_fields.get("Statut", "")
+        pennylane_id = str(card_fields.get("ID Pennylane", ""))
+        suivi_adresse = card_fields.get("Adresse", "")  # Adresse depuis Suivi Facturation
+
+        if not client_name or statut not in active_statuts:
             continue
 
-        client_id = client["id"]
+        # Éviter les doublons
+        if client_name.upper() in seen_clients:
+            continue
+        seen_clients.add(client_name.upper())
 
-        # Récupérer l'adresse principale depuis la table Adresses
-        principale_addr = get_principale_address(client_id)
+        # Trouver le client correspondant dans la table Clients
+        existing_client = clients_by_pennylane.get(pennylane_id) or clients_by_name.get(client_name.upper())
 
-        # Fallback sur le champ Adresse du client si pas d'adresse dans la table Adresses
-        if principale_addr:
-            adresse = principale_addr.get("adresse", "")
+        if existing_client:
+            client_id = existing_client["id"]
+            client_fields = existing_client.get("fields", {})
+
+            # Récupérer l'adresse principale depuis la table Adresses
+            principale_addr = get_principale_address(client_id)
+
+            # Priorité: Table Adresses > Suivi Facturation > Champ Adresse du client
+            if principale_addr:
+                adresse = principale_addr.get("adresse", "")
+            elif suivi_adresse:
+                adresse = suivi_adresse
+            else:
+                adresse = client_fields.get("Adresse", "")
+
+            toutes_adresses = get_client_addresses(client_id)
         else:
-            adresse = fields.get("Adresse", "")
+            # Client pas encore dans la table Clients, utiliser l'adresse de Suivi
+            client_id = None
+            client_fields = {}
+            principale_addr = None
+            adresse = suivi_adresse
+            toutes_adresses = []
 
         if not adresse:
             continue
 
-        # Récupérer toutes les adresses pour l'affichage
-        toutes_adresses = get_client_addresses(client_id)
-
         clients_to_deliver.append({
             "id": client_id,
-            "nom": fields.get("Nom", ""),
+            "nom": client_name,
             "adresse": adresse,
             "adresse_label": principale_addr.get("label", "Principale") if principale_addr else "Principale",
             "code_postal": extract_postal_code(adresse),
             "zone": get_geographic_zone(extract_postal_code(adresse)),
-            "nb_bouquets": fields.get("Nb_Bouquets", 1),
-            "creneau": fields.get("Créneau_Préféré", ""),
-            "pref_couleurs": fields.get("Pref_Couleurs", ""),
-            "pref_style": fields.get("Pref_Style", ""),
+            "nb_bouquets": client_fields.get("Nb_Bouquets", 1) if client_fields else 1,
+            "creneau": client_fields.get("Créneau_Préféré", "") if client_fields else "",
+            "pref_couleurs": client_fields.get("Pref_Couleurs", "") if client_fields else "",
+            "pref_style": client_fields.get("Pref_Style", "") if client_fields else "",
             "toutes_adresses": toutes_adresses,
         })
 
