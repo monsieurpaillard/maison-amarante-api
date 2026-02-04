@@ -27,6 +27,7 @@ AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
 IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
 PENNYLANE_API_KEY = os.environ.get("PENNYLANE_API_KEY")
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+OPENROUTE_API_KEY = os.environ.get("OPENROUTE_API_KEY")  # Gratuit: https://openrouteservice.org/
 
 # Maison Amarante DB (opérationnel)
 AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "app4EHdsU0Z4hr8Bc")
@@ -1428,12 +1429,15 @@ def get_approx_coords_from_postal(code_postal: str) -> tuple:
     return (48.8566, 2.3522)
 
 
-def optimize_route_with_google_maps(stops: list, origin: str = "Place de la Concorde, Paris") -> dict:
-    """Utilise l'API Google Maps Directions pour optimiser l'ordre des stops.
+def optimize_route_with_openroute(stops: list, origin_coords: tuple = (2.3212, 48.8656)) -> dict:
+    """Utilise l'API OpenRouteService (gratuite) pour optimiser l'ordre des stops.
+
+    OpenRouteService offre 2000 requêtes/jour gratuites.
+    https://openrouteservice.org/
 
     Args:
         stops: liste de dicts avec {nom, adresse, adresse_label, code_postal, zone, ...}
-        origin: adresse de départ (par défaut Place de la Concorde)
+        origin_coords: coordonnées du point de départ (lng, lat) - défaut: Place de la Concorde
 
     Returns:
         dict avec:
@@ -1441,73 +1445,103 @@ def optimize_route_with_google_maps(stops: list, origin: str = "Place de la Conc
             - duration: durée totale estimée
             - distance: distance totale
     """
-    import urllib.parse
-
     if not stops or len(stops) <= 1:
         return {"stops": stops, "duration": 0, "distance": 0, "optimized": False}
 
-    if not GOOGLE_MAPS_API_KEY:
-        print("[OPTIMIZE] No Google Maps API key, using fallback")
-        return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": "Clé API Google Maps non configurée"}
+    if not OPENROUTE_API_KEY:
+        print("[OPTIMIZE] No OpenRouteService API key, using fallback")
+        return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": "Clé API OpenRouteService non configurée (gratuit: openrouteservice.org)"}
 
-    # Construire les waypoints (toutes les adresses sauf la dernière qui sera la destination)
-    addresses = [s.get("adresse", "").replace("\n", " ").strip() for s in stops]
+    # Géocoder toutes les adresses pour obtenir les coordonnées
+    coords_list = []
+    for i, stop in enumerate(stops):
+        adresse = stop.get("adresse", "").replace("\n", " ").strip()
+        coord = geocode_address(adresse)
+        if coord:
+            # OpenRouteService utilise [lng, lat] pas [lat, lng]
+            coords_list.append({"index": i, "coords": [coord[1], coord[0]]})
+        else:
+            # Utiliser approximation par code postal
+            cp = stop.get("code_postal", "")
+            approx = get_approx_coords_from_postal(cp)
+            coords_list.append({"index": i, "coords": [approx[1], approx[0]]})
 
-    # Utiliser la première adresse comme destination aussi (boucle)
-    # ou la dernière si on veut un trajet linéaire
-    waypoints = addresses[:-1] if len(addresses) > 1 else []
-    destination = addresses[-1] if addresses else origin
+    # Construire la requête pour l'API Optimization (TSP)
+    # Format: jobs = liste des points à visiter, vehicles = véhicule partant d'un dépôt
+    jobs = []
+    for i, item in enumerate(coords_list):
+        jobs.append({
+            "id": i + 1,
+            "location": item["coords"]
+        })
 
-    # Construire l'URL de l'API Directions
-    # optimize:true demande à Google d'optimiser l'ordre des waypoints
-    waypoints_str = "|".join([f"optimize:true"] + [urllib.parse.quote(w) for w in addresses])
+    vehicles = [{
+        "id": 1,
+        "profile": "driving-car",
+        "start": list(origin_coords),  # Point de départ
+        "end": list(origin_coords)      # Retour au point de départ
+    }]
 
-    url = "https://maps.googleapis.com/maps/api/directions/json"
-    params = {
-        "origin": origin,
-        "destination": origin,  # Retour au point de départ (boucle)
-        "waypoints": f"optimize:true|{'|'.join(addresses)}",
-        "mode": "driving",
-        "language": "fr",
-        "key": GOOGLE_MAPS_API_KEY
+    payload = {
+        "jobs": jobs,
+        "vehicles": vehicles
     }
 
     try:
-        response = req.get(url, params=params, timeout=30)
-        data = response.json()
+        response = req.post(
+            "https://api.openrouteservice.org/optimization",
+            headers={
+                "Authorization": OPENROUTE_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=30
+        )
 
-        if data.get("status") != "OK":
-            error_msg = data.get("error_message", data.get("status", "Erreur inconnue"))
-            print(f"[OPTIMIZE] Google Maps API error: {error_msg}")
+        if response.status_code != 200:
+            error_msg = response.text
+            print(f"[OPTIMIZE] OpenRouteService API error: {error_msg}")
             return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": error_msg}
 
-        # Récupérer l'ordre optimisé des waypoints
+        data = response.json()
+
+        # Récupérer l'ordre optimisé des étapes
         routes = data.get("routes", [])
         if not routes:
             return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": "Aucune route trouvée"}
 
         route = routes[0]
-        waypoint_order = route.get("waypoint_order", [])
+        steps = route.get("steps", [])
 
-        print(f"[OPTIMIZE] Google Maps waypoint_order: {waypoint_order}")
+        # Extraire l'ordre des jobs (ignorer les steps de type "start" et "end")
+        optimized_order = []
+        for step in steps:
+            if step.get("type") == "job":
+                job_id = step.get("job")
+                if job_id:
+                    optimized_order.append(job_id - 1)  # job_id commence à 1
 
-        # Réordonner les stops selon l'ordre optimisé
-        if waypoint_order and len(waypoint_order) == len(stops):
-            optimized_stops = [stops[i] for i in waypoint_order]
+        print(f"[OPTIMIZE] OpenRouteService order: {optimized_order}")
+
+        # Réordonner les stops
+        if optimized_order and len(optimized_order) == len(stops):
+            optimized_stops = [stops[i] for i in optimized_order]
         else:
             optimized_stops = stops
 
-        # Calculer la durée et distance totales
-        legs = route.get("legs", [])
-        total_duration = sum(leg.get("duration", {}).get("value", 0) for leg in legs)  # en secondes
-        total_distance = sum(leg.get("distance", {}).get("value", 0) for leg in legs)  # en mètres
+        # Durée et distance totales
+        total_duration = route.get("duration", 0)  # en secondes
+        total_distance = route.get("distance", 0)  # en mètres
 
-        # Ajouter le temps de trajet entre chaque stop
+        # Ajouter le temps entre chaque étape
+        job_steps = [s for s in steps if s.get("type") == "job"]
         for i, stop in enumerate(optimized_stops):
-            if i < len(legs):
-                leg = legs[i]
-                stop["temps_trajet"] = leg.get("duration", {}).get("text", "")
-                stop["distance_trajet"] = leg.get("distance", {}).get("text", "")
+            if i < len(job_steps):
+                step = job_steps[i]
+                duration_to = step.get("duration", 0)
+                distance_to = step.get("distance", 0)
+                stop["temps_trajet"] = f"{duration_to // 60} min" if duration_to else ""
+                stop["distance_trajet"] = f"{distance_to / 1000:.1f} km" if distance_to else ""
 
         return {
             "stops": optimized_stops,
@@ -1519,12 +1553,10 @@ def optimize_route_with_google_maps(stops: list, origin: str = "Place de la Conc
         }
 
     except Exception as e:
-        print(f"[OPTIMIZE] Error calling Google Maps: {e}")
+        print(f"[OPTIMIZE] Error calling OpenRouteService: {e}")
+        import traceback
+        traceback.print_exc()
         return {"stops": optimize_route_order(stops), "duration": 0, "distance": 0, "optimized": False, "error": str(e)}
-
-
-# Garder l'ancienne fonction comme fallback
-    return optimize_route_order(stops)
 
 
 def generate_google_maps_url(clients: list, start_address: str = None) -> str:
@@ -3654,16 +3686,16 @@ def api_tournees_optimize():
         if not stops:
             return jsonify({"error": "Aucun stop à optimiser"}), 400
 
-        print(f"[OPTIMIZE] Optimizing {len(stops)} stops with Google Maps...")
-        result = optimize_route_with_google_maps(stops, origin)
+        print(f"[OPTIMIZE] Optimizing {len(stops)} stops with OpenRouteService...")
+        result = optimize_route_with_openroute(stops)
 
         optimized = result.get("stops", stops)
         zones_couvertes = list(set(c.get("zone", "Autre") for c in optimized))
 
         response_data = {
             "success": True,
-            "optimized_by_google": result.get("optimized", False),
-            "message": f"Tournée optimisée par Google Maps ({len(optimized)} stops)" if result.get("optimized") else f"Optimisation fallback ({len(optimized)} stops)",
+            "optimized_by_openroute": result.get("optimized", False),
+            "message": f"Tournée optimisée ({len(optimized)} stops)" if result.get("optimized") else f"Optimisation locale ({len(optimized)} stops)",
             "stops": optimized,
             "nb_stops": len(optimized),
             "nb_bouquets": sum(c.get("nb_bouquets", 1) for c in optimized),

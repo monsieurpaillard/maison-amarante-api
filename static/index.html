@@ -1431,7 +1431,7 @@
                                         🗺️ Ouvrir dans Google Maps
                                     </a>
                                     <button class="btn" onclick="optimizeTourneeWithAI(${idx}, ${JSON.stringify(clients).replace(/"/g, '&quot;')})" style="background: #e84393; padding: 10px 15px;" id="optimizeBtn${idx}">
-                                        🗺️ Optimiser (Google Maps)
+                                        🚀 Optimiser le trajet
                                     </button>
                                 </div>
                                 <div id="optimizeLoading${idx}" style="display: none; text-align: center; padding: 10px; color: #666;">
@@ -1495,14 +1495,14 @@
                 // Mettre à jour l'affichage avec les stops optimisés
                 const optimizedClients = data.stops || [];
                 const color = tourneeColors[tourneeIdx % tourneeColors.length];
-                const isGoogleOptimized = data.optimized_by_google;
+                const isGoogleOptimized = data.optimized_by_openroute;
                 const duree = data.duree_totale || '';
                 const distance = data.distance_totale || '';
 
                 // Afficher un message avec les infos de trajet
                 const infoText = isGoogleOptimized
-                    ? `✅ Optimisé par Google Maps${duree ? ' · ' + duree : ''}${distance ? ' · ' + distance : ''}`
-                    : `⚠️ Optimisation locale (clé Google Maps non configurée)`;
+                    ? `✅ Trajet optimisé${duree ? ' · ' + duree : ''}${distance ? ' · ' + distance : ''}`
+                    : `⚠️ Optimisation locale (configurez OPENROUTE_API_KEY)`;
 
                 // Mettre à jour la liste des clients dans le details
                 details.innerHTML = `
@@ -1538,7 +1538,7 @@
 
             } catch (err) {
                 alert('Erreur: ' + err.message);
-                btn.textContent = '🗺️ Optimiser (Google Maps)';
+                btn.textContent = '🚀 Optimiser le trajet';
                 btn.disabled = false;
             } finally {
                 loading.style.display = 'none';
