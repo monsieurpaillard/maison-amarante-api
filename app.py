@@ -1,11 +1,13 @@
 """
-Maison Amarante - API v4
+Maison Amarante - API v5
 ========================
 - Sync Pennylane → Airtable
 - Planification des tournées
 - Facturation post-livraison
-- Plus besoin de Make !
+- Multi-adresses clients
 """
+
+print("=== MAISON AMARANTE API v5 STARTING ===")
 
 import os
 import json
