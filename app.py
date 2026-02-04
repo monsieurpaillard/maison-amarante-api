@@ -577,10 +577,9 @@ def get_client_addresses(client_id: str) -> list:
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_ADRESSES_TABLE}"
     headers = get_airtable_headers()
 
-    # Filtrer par le lien Client
-    params = {
-        "filterByFormula": f"FIND('{client_id}', ARRAYJOIN({{Client}}, ','))"
-    }
+    # D'abord récupérer TOUS les records pour debug
+    # Puis filtrer en Python (plus fiable que les formules Airtable pour linked records)
+    params = {}
 
     all_records = []
     offset = None
@@ -601,18 +600,30 @@ def get_client_addresses(client_id: str) -> list:
         if not offset:
             break
 
-    # Formater les résultats
+    # Debug: afficher tous les records récupérés
+    print(f"[ADRESSES] Total records in table: {len(all_records)}")
+    for r in all_records[:5]:  # Afficher les 5 premiers pour debug
+        f = r.get("fields", {})
+        print(f"[ADRESSES] Record {r['id']}: Client={f.get('Client')}, Label={f.get('Label')}")
+
+    # Formater et filtrer les résultats
     addresses = []
     for record in all_records:
         fields = record.get("fields", {})
-        addresses.append({
-            "id": record["id"],
-            "label": fields.get("Label", ""),
-            "adresse": fields.get("Adresse", ""),
-            "principale": fields.get("Principale", False),
-            "notes": fields.get("Notes", ""),
-            "client_id": client_id
-        })
+        # Le champ Client est un linked record, donc c'est une liste d'IDs
+        linked_clients = fields.get("Client", [])
+        # Vérifier si notre client_id est dans la liste
+        if client_id in linked_clients:
+            addresses.append({
+                "id": record["id"],
+                "label": fields.get("Label", ""),
+                "adresse": fields.get("Adresse", ""),
+                "principale": fields.get("Principale", False),
+                "notes": fields.get("Notes", ""),
+                "client_id": client_id
+            })
+
+    print(f"[ADRESSES] Found {len(addresses)} addresses for client {client_id}")
 
     # Trier pour mettre l'adresse principale en premier
     addresses.sort(key=lambda a: (not a["principale"], a["label"]))
@@ -2255,6 +2266,29 @@ def bouquet_page(bouquet_id):
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "Maison Amarante API v5", "tournees_enabled": True})
+
+
+@app.route("/api/debug/adresses", methods=["GET"])
+def debug_adresses():
+    """Debug: voir le contenu brut de la table Adresses"""
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_ADRESSES_TABLE}"
+    headers = get_airtable_headers()
+    response = req.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        records = data.get("records", [])
+        return jsonify({
+            "total": len(records),
+            "records": [
+                {
+                    "id": r["id"],
+                    "fields": r.get("fields", {})
+                }
+                for r in records
+            ]
+        })
+    else:
+        return jsonify({"error": response.text}), 500
 
 
 # Config budget (stockage simple en fichier)
