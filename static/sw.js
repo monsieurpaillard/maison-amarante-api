@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maison-amarante-v1';
+const CACHE_NAME = 'maison-amarante-v2';
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
