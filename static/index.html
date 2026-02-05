@@ -606,8 +606,8 @@
     </div>
 
     <div class="tabs">
-        <button class="tab active" data-tab="bouquet">📷 Bouquet</button>
-        <button class="tab" data-tab="sync">🔄 Sync</button>
+        <button class="tab active" data-tab="bouquet" onclick="console.log('CLICK BOUQUET')">📷 Bouquet</button>
+        <button class="tab" data-tab="sync" onclick="console.log('CLICK SYNC')">🔄 Sync</button>
         <button class="tab" data-tab="inbox">📥 Inbox <span id="inboxBadge" class="inbox-badge" style="display:none;">0</span></button>
         <button class="tab" data-tab="tournees">🚚 Tournées</button>
         <button class="tab" data-tab="dispatch">💐 Dispatch</button>
@@ -866,6 +866,8 @@
     </div>
 
     <script>
+        console.log('=== MAISON AMARANTE JS LOADED ===');
+
         // Budget Banner
         function formatMoney(n) {
             return n.toLocaleString('fr-FR') + ' €';
